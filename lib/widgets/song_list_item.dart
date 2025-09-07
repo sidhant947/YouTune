@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../models/playlist.dart';
 import '../models/song.dart';
-import '../providers/download_provider.dart';
-import '../services/database_helper.dart';
+import 'glassmorphic_container.dart';
 
 class SongListItem extends StatelessWidget {
   final Song song;
@@ -12,114 +9,78 @@ class SongListItem extends StatelessWidget {
 
   const SongListItem({super.key, required this.song, required this.onTap});
 
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return "$minutes:$seconds";
-  }
-
-  void _showAddToPlaylistDialog(BuildContext context, Song song) async {
-    final dbHelper = DatabaseHelper();
-    final playlists = await dbHelper.getPlaylists();
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        if (playlists.isEmpty) {
-          return AlertDialog(
-            title: Text('Add to Playlist'),
-            content: Text('You haven\'t created any playlists yet.'),
-            actions: [
-              TextButton(
-                child: Text('OK'),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
-          );
-        }
-        return SimpleDialog(
-          title: Text('Add to Playlist'),
-          children: playlists.map((playlist) {
-            return SimpleDialogOption(
-              onPressed: () {
-                dbHelper.addSongToPlaylist(playlist.id!, song);
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('${song.title} added to ${playlist.name}'),
-                  ),
-                );
-              },
-              child: Text(playlist.name),
-            );
-          }).toList(),
-        );
-      },
-    );
-  }
-
-  Widget _buildTrailingWidget(BuildContext context) {
-    return Consumer<DownloadProvider>(
-      builder: (context, downloadProvider, child) {
-        final status = downloadProvider.getStatus(song.id);
-
-        switch (status) {
-          case DownloadStatus.downloading:
-            return SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                value: downloadProvider.getProgress(song.id),
-                strokeWidth: 2.0,
-              ),
-            );
-          case DownloadStatus.downloaded:
-            return Icon(
-              Icons.check_circle,
-              color: Theme.of(context).primaryColor,
-            );
-          case DownloadStatus.notDownloaded:
-          default:
-            return IconButton(
-              icon: Icon(Icons.download),
-              onPressed: () {
-                downloadProvider.downloadSong(song);
-              },
-            );
-        }
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: CachedNetworkImage(
-        imageUrl: song.imageUrl,
-        placeholder: (context, url) => CircularProgressIndicator(),
-        errorWidget: (context, url, error) => Icon(Icons.error),
-        width: 50,
-        height: 50,
-        fit: BoxFit.cover,
-      ),
-      title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(song.artist),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(_formatDuration(song.duration)),
-          SizedBox(width: 8),
-          _buildTrailingWidget(context),
-          IconButton(
-            icon: Icon(Icons.more_vert),
-            onPressed: () {
-              _showAddToPlaylistDialog(context, song);
-            },
-          ),
-        ],
-      ),
+    String subtitleText = song.artist;
+    if (song.album != null && song.album!.isNotEmpty) {
+      subtitleText += ' • ${song.album}';
+    }
+
+    return GestureDetector(
       onTap: onTap,
+      child: GlassmorphicContainer(
+        borderRadius: 16,
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 3,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
+                child: CachedNetworkImage(
+                  imageUrl: song.imageUrl,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  placeholder: (context, url) =>
+                      Container(color: Colors.white.withOpacity(0.1)),
+                  errorWidget: (context, url, error) => Container(
+                    color: Colors.white.withOpacity(0.1),
+                    child: Icon(
+                      Icons.broken_image,
+                      color: Colors.white.withOpacity(0.3),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 1,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitleText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

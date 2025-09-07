@@ -1,14 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'providers/audio_player_provider.dart';
-import 'providers/download_provider.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:get/get.dart';
 import 'screens/home_screen.dart';
-import 'screens/downloads_screen.dart';
-import 'screens/playlists_screen.dart'; // Import the new screen
+import 'screens/search_screen.dart';
+import 'services/database_service.dart';
+import 'controllers/audio_player_controller.dart';
+import 'controllers/download_controller.dart';
+import 'controllers/navigation_controller.dart';
 import 'widgets/mini_player.dart';
 
-void main() {
-  runApp(MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await DatabaseService.init();
+
+  Get.put(DatabaseService());
+  Get.put(DownloadController());
+  Get.put(AudioPlayerController());
+  Get.put(NavigationController());
+
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -16,78 +26,79 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AudioPlayerProvider()),
-        ChangeNotifierProvider(create: (_) => DownloadProvider()),
-      ],
-      child: MaterialApp(
-        title: 'Youtune',
-        theme: ThemeData(
-          primarySwatch: Colors.red,
-          visualDensity: VisualDensity.adaptivePlatformDensity,
-          brightness: Brightness.dark,
+    return GetMaterialApp(
+      title: 'Youtune',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: Colors.black,
+        primaryColor: Colors.white,
+        fontFamily:
+            'Inter', // Consider adding a font like Inter for a clean look
+        colorScheme: const ColorScheme.dark(
+          primary: Colors.white,
+          secondary: Colors.white,
+          surface: Colors.black,
         ),
-        home: MainScreen(),
       ),
+      home: const MainScreen(),
     );
   }
 }
 
-class MainScreen extends StatefulWidget {
+class MainScreen extends StatelessWidget {
   const MainScreen({super.key});
 
   @override
-  _MainScreenState createState() => _MainScreenState();
-}
-
-class _MainScreenState extends State<MainScreen> {
-  int _selectedIndex = 0;
-
-  static final List<Widget> _widgetOptions = <Widget>[
-    HomeScreen(),
-    DownloadsScreen(),
-    PlaylistsScreen(), // Add the new screen here
-  ];
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Youtune')),
-      body: Stack(
-        children: [
-          // Apply padding to the IndexedStack so content isn't hidden
-          Padding(
-            padding: const EdgeInsets.only(bottom: 60.0),
-            child: IndexedStack(
-              index: _selectedIndex,
-              children: _widgetOptions,
+    final navController = Get.find<NavigationController>();
+    const double miniPlayerHeight = 70.0;
+
+    return Obx(
+      () => Scaffold(
+        extendBodyBehindAppBar:
+            true, // Allows content to go behind the glass app bar
+        appBar: AppBar(
+          backgroundColor: Colors.black.withOpacity(0.3),
+          elevation: 0,
+          title: Text(
+            navController.isSearchVisible.value ? 'Search' : 'Library',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ).animate().fade(duration: 300.ms),
+          leading: navController.isSearchVisible.value
+              ? IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back_ios_new,
+                    color: Colors.white,
+                  ),
+                  onPressed: () => navController.showHome(),
+                )
+              : null,
+        ),
+        body: Stack(
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 500),
+              child: navController.isSearchVisible.value
+                  ? const SearchScreen()
+                  : const HomeScreen(),
             ),
-          ),
-          Positioned(bottom: 0, left: 0, right: 0, child: MiniPlayer()),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.download),
-            label: 'Downloads',
-          ),
-          BottomNavigationBarItem(
-            // Add the new tab here
-            icon: Icon(Icons.queue_music),
-            label: 'Playlists',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
+            const Positioned(bottom: 0, left: 0, right: 0, child: MiniPlayer()),
+          ],
+        ),
+        floatingActionButton: navController.isSearchVisible.value
+            ? null
+            : Padding(
+                padding: const EdgeInsets.only(bottom: miniPlayerHeight),
+                child: FloatingActionButton(
+                  backgroundColor: Colors.white.withOpacity(0.9),
+                  foregroundColor: Colors.black,
+                  elevation: 10,
+                  child: const Icon(Icons.search),
+                  onPressed: () {
+                    navController.showSearch();
+                  },
+                ).animate().scale(delay: 300.ms),
+              ),
       ),
     );
   }

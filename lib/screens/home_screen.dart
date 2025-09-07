@@ -1,80 +1,87 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../models/song.dart';
-import '../services/api_service.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:get/get.dart';
 import '../widgets/song_list_item.dart';
-import '../providers/audio_player_provider.dart';
+import '../controllers/audio_player_controller.dart';
+import '../controllers/download_controller.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  _HomeScreenState createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  final ApiService _apiService = ApiService();
-  final TextEditingController _searchController = TextEditingController();
-  List<Song> _songs = [];
-  bool _isLoading = false;
-
-  void _searchSongs() async {
-    if (_searchController.text.isEmpty) return;
-    setState(() {
-      _isLoading = true;
-    });
-    try {
-      final songs = await _apiService.searchSongs(_searchController.text);
-      setState(() {
-        _songs = songs;
-      });
-    } catch (e) {
-      // Handle error
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              labelText: 'Search for a song',
-              suffixIcon: IconButton(
-                icon: Icon(Icons.search),
-                onPressed: _searchSongs,
+    final downloadController = Get.find<DownloadController>();
+    final audioController = Get.find<AudioPlayerController>();
+
+    return Obx(() {
+      if (downloadController.downloadedSongs.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.library_music_outlined,
+                size: 80,
+                color: Colors.white.withOpacity(0.5),
               ),
-            ),
-            onSubmitted: (_) => _searchSongs(),
-          ),
-        ),
-        Expanded(
-          child: _isLoading
-              ? Center(child: CircularProgressIndicator())
-              : ListView.builder(
-                  itemCount: _songs.length,
-                  itemBuilder: (context, index) {
-                    final song = _songs[index];
-                    return SongListItem(
-                      song: song,
-                      onTap: () {
-                        Provider.of<AudioPlayerProvider>(
-                          context,
-                          listen: false,
-                        ).play(song);
-                      },
-                    );
-                  },
+              const SizedBox(height: 20),
+              Text(
+                'Your Library is Empty',
+                style: TextStyle(
+                  fontSize: 18,
+                  color: Colors.white.withOpacity(0.8),
                 ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Songs you download will appear here.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white.withOpacity(0.5)),
+              ),
+            ],
+          ).animate().fade(duration: 500.ms),
+        );
+      }
+      return GridView.builder(
+        padding: const EdgeInsets.fromLTRB(12, kToolbarHeight + 60, 12, 100),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 12.0,
+          mainAxisSpacing: 12.0,
+          childAspectRatio: 0.75,
         ),
-      ],
-    );
+        itemCount: downloadController.downloadedSongs.length,
+        itemBuilder: (context, index) {
+          final song = downloadController.downloadedSongs[index];
+          return Dismissible(
+            key: Key(song.id),
+            direction: DismissDirection.endToStart,
+            onDismissed: (direction) {
+              downloadController.deleteSong(song);
+              Get.snackbar(
+                'Removed',
+                '${song.title} removed from your library.',
+                snackPosition: SnackPosition.BOTTOM,
+                backgroundColor: Colors.white.withOpacity(0.1),
+                colorText: Colors.white,
+              );
+            },
+            background: Container(
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: const Icon(Icons.delete_outline, color: Colors.white),
+            ),
+            child: SongListItem(
+              song: song,
+              onTap: () => audioController.play(song),
+            ),
+          ).animate().fade(delay: (index * 50).ms).slideY(begin: 0.2);
+        },
+      );
+    });
   }
 }
