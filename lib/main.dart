@@ -40,6 +40,7 @@ class MyApp extends StatelessWidget {
           surface: Colors.black,
         ),
       ),
+      debugShowCheckedModeBanner: false,
       home: const MainScreen(),
     );
   }
@@ -51,7 +52,7 @@ class MainScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final navController = Get.find<NavigationController>();
-    const double miniPlayerHeight = 70.0;
+    const double miniPlayerHeight = 80.0;
 
     return Obx(
       () => Scaffold(

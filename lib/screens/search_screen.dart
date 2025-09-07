@@ -1,3 +1,4 @@
+// lib/screens/search_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:get/get.dart';
@@ -71,6 +72,13 @@ class _SearchScreenState extends State<SearchScreen> {
                 hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
                 border: InputBorder.none,
                 icon: Icon(Icons.search, color: Colors.white.withOpacity(0.7)),
+                suffixIcon: IconButton(
+                  icon: Icon(Icons.add, color: Colors.white.withOpacity(0.7)),
+                  onPressed: _songs.isNotEmpty
+                      ? () => audioController.addToQueueMultiple(_songs)
+                      : null,
+                  tooltip: 'Add all to queue',
+                ),
               ),
               onSubmitted: (_) => _searchSongs(),
             ),
@@ -106,12 +114,34 @@ class _SearchScreenState extends State<SearchScreen> {
                   itemCount: _songs.length,
                   itemBuilder: (context, index) {
                     final song = _songs[index];
-                    return SongListItem(
-                      song: song,
-                      onTap: () {
-                        audioController.play(song);
-                      },
-                    ).animate().fade(delay: (index * 50).ms).slideY(begin: 0.2);
+                    return Stack(
+                      children: [
+                        SongListItem(
+                              song: song,
+                              onTap: () {
+                                audioController.play(song);
+                              },
+                            )
+                            .animate()
+                            .fade(delay: (index * 50).ms)
+                            .slideY(begin: 0.2),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: IconButton(
+                            icon: Icon(
+                              Icons.add_circle,
+                              color: Colors.white.withOpacity(0.8),
+                              size: 28,
+                            ),
+                            onPressed: () {
+                              audioController.addToQueue(song);
+                            },
+                            tooltip: 'Add to queue',
+                          ),
+                        ),
+                      ],
+                    );
                   },
                 ),
         ),

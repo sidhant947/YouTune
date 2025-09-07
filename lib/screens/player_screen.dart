@@ -1,3 +1,4 @@
+// lib/screens/player_screen.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -7,6 +8,7 @@ import '../controllers/audio_player_controller.dart';
 import '../widgets/player_controls.dart';
 import '../widgets/seek_bar.dart';
 import '../widgets/glassmorphic_container.dart';
+import './queue_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -47,6 +49,18 @@ class _PlayerScreenState extends State<PlayerScreen>
           icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
           onPressed: () => Get.back(),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.queue_music_rounded),
+            onPressed: () {
+              Get.to(
+                () => const QueueScreen(),
+                transition: Transition.downToUp,
+                duration: const Duration(milliseconds: 500),
+              );
+            },
+          ),
+        ],
       ),
       body: Obx(() {
         final song = audioController.currentSong.value;

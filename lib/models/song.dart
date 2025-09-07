@@ -1,3 +1,4 @@
+// lib/models/song.dart
 import 'package:hive/hive.dart';
 
 part 'song.g.dart';
@@ -30,6 +31,25 @@ class Song extends HiveObject {
     required this.imageUrl,
     this.filePath,
   });
+
+  // Add copyWith method for easier manipulation
+  Song copyWith({
+    String? id,
+    String? title,
+    String? artist,
+    String? album,
+    String? imageUrl,
+    String? filePath,
+  }) {
+    return Song(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      artist: artist ?? this.artist,
+      album: album ?? this.album,
+      imageUrl: imageUrl ?? this.imageUrl,
+      filePath: filePath ?? this.filePath,
+    );
+  }
 
   static Song? fromYouTubeMusicJson(Map<String, dynamic> json) {
     try {

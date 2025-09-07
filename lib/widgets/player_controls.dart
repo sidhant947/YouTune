@@ -1,3 +1,4 @@
+// lib/widgets/player_controls.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:get/get.dart';
@@ -19,7 +20,9 @@ class PlayerControls extends StatelessWidget {
               color: Colors.white,
               size: 36,
             ),
-            onPressed: () {},
+            onPressed: audioController.currentIndex.value > 0
+                ? () => audioController.playPrevious()
+                : null,
           ),
           IconButton(
             icon: AnimatedSwitcher(
@@ -50,7 +53,11 @@ class PlayerControls extends StatelessWidget {
               color: Colors.white,
               size: 36,
             ),
-            onPressed: () {},
+            onPressed:
+                audioController.currentIndex.value <
+                    audioController.queue.length - 1
+                ? () => audioController.playNext()
+                : null,
           ),
         ],
       ),
