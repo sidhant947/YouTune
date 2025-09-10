@@ -1,3 +1,4 @@
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:get/get.dart';
@@ -12,12 +13,10 @@ import 'widgets/mini_player.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await DatabaseService.init();
-
   Get.put(DatabaseService());
   Get.put(DownloadController());
   Get.put(AudioPlayerController());
   Get.put(NavigationController());
-
   runApp(const MyApp());
 }
 
@@ -32,8 +31,7 @@ class MyApp extends StatelessWidget {
         brightness: Brightness.dark,
         scaffoldBackgroundColor: Colors.black,
         primaryColor: Colors.white,
-        fontFamily:
-            'Inter', // Consider adding a font like Inter for a clean look
+        fontFamily: 'Inter',
         colorScheme: const ColorScheme.dark(
           primary: Colors.white,
           secondary: Colors.white,
@@ -53,13 +51,11 @@ class MainScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final navController = Get.find<NavigationController>();
     const double miniPlayerHeight = 80.0;
-
     return Obx(
       () => Scaffold(
-        extendBodyBehindAppBar:
-            true, // Allows content to go behind the glass app bar
+        extendBodyBehindAppBar: true,
         appBar: AppBar(
-          backgroundColor: Colors.black.withOpacity(0.3),
+          backgroundColor: Colors.black.withValues(alpha: 0.3), // <-- Fixed
           elevation: 0,
           title: Text(
             navController.isSearchVisible.value ? 'Search' : 'Library',
@@ -91,10 +87,13 @@ class MainScreen extends StatelessWidget {
             : Padding(
                 padding: const EdgeInsets.only(bottom: miniPlayerHeight),
                 child: FloatingActionButton(
-                  backgroundColor: Colors.white.withOpacity(0.9),
+                  backgroundColor: Colors.white.withValues(
+                    alpha: 0.9,
+                  ), // <-- Fixed
                   foregroundColor: Colors.black,
                   elevation: 10,
                   child: const Icon(Icons.search),
+                  // FIX: Wrap onPressed in a function
                   onPressed: () {
                     navController.showSearch();
                   },

@@ -1,3 +1,4 @@
+// lib/widgets/mini_player.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:get/get.dart';
@@ -12,7 +13,6 @@ class MiniPlayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final audioController = Get.find<AudioPlayerController>();
-
     return Obx(() {
       final song = audioController.currentSong.value;
       if (song == null) {
@@ -57,31 +57,57 @@ class MiniPlayer extends StatelessWidget {
                     ),
                     Text(
                       song.artist,
-                      style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                      ), // <-- Fixed
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 12),
+              // Play/Pause Button with Loading Indicator
               Obx(
+                // <-- Wrap the button in Obx to listen to isPreparing
                 () => IconButton(
-                  icon: Icon(
-                    audioController.isPlaying.value
-                        ? Icons.pause_circle_filled_rounded
-                        : Icons.play_circle_filled_rounded,
-                    color: Colors.white,
-                    size: 40,
-                  ),
-                  onPressed: () {
-                    if (audioController.isPlaying.value) {
-                      audioController.pause();
-                    } else {
-                      audioController.resume();
-                    }
-                  },
+                  icon:
+                      audioController
+                          .isPreparing
+                          .value // <-- Check isPreparing
+                      ? const SizedBox(
+                          height: 40, // Match the approximate size of the icon
+                          width: 40,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.0,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                      : Icon(
+                          audioController.isPlaying.value
+                              ? Icons.pause_circle_filled_rounded
+                              : Icons.play_circle_filled_rounded,
+                          color: Colors.white,
+                          size: 40,
+                        ),
+                  onPressed:
+                      audioController
+                          .isPreparing
+                          .value // <-- Disable while preparing
+                      ? null
+                      : () {
+                          // <-- Enable play/pause when ready
+                          if (audioController.isPlaying.value) {
+                            audioController.pause();
+                          } else {
+                            audioController.resume();
+                          }
+                        },
                 ),
-              ),
+              ).animate().scale(
+                delay: 100.ms,
+              ), // Keep the animation for the button itself
             ],
           ),
         ),

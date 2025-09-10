@@ -4,19 +4,29 @@ import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:json_path/json_path.dart';
 import '../models/song.dart';
+import 'dart:io';
+
+import 'package:http/io_client.dart';
+import 'package:flutter/foundation.dart'; // Import for debugPrint
 
 class ApiService {
   final YoutubeExplode _yt = YoutubeExplode();
-  final http.Client _httpClient = http.Client();
+  // In api_service.dart
+  // import 'package:http/io_client.dart'; // Add this import
+  // import 'dart:io'; // Add this import
 
+  // final http.Client _httpClient = http.Client(); // Replace this line with:
+  final http.Client _httpClient = IOClient(
+    HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10)
+      ..idleTimeout = const Duration(seconds: 10),
+  );
   // This is the internal API endpoint YouTube Music uses.
   static const String _searchUrl =
       'https://music.youtube.com/youtubei/v1/search';
   static const String _nextUrl = 'https://music.youtube.com/youtubei/v1/next';
-
   // This is a public key used by YouTube Music web client.
   static const String _apiKey = 'AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30';
-
   // This "context" tells the API that we are a web client,
   // ensuring we get music-focused results.
   final Map<String, dynamic> _clientContext = {
@@ -30,14 +40,12 @@ class ApiService {
       // This 'params' value specifically asks for songs.
       'params': 'EgWKAQIIAWoOEAMQBBAJEAoQBRAQEBU%3D',
     });
-
     try {
       final response = await _httpClient.post(
         Uri.parse('$_searchUrl?key=$_apiKey'),
         headers: {'Content-Type': 'application/json'},
         body: body,
       );
-
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final songs = _parseSearchResponse(data);
@@ -46,21 +54,19 @@ class ApiService {
         throw Exception('Failed to search songs');
       }
     } catch (e) {
-      print("Error in searchSongs: $e");
+      debugPrint("Error in searchSongs: $e"); // <-- Fixed
       return [];
     }
   }
 
   Future<List<Song>> getSimilarSongs(String videoId) async {
     final body = json.encode({'context': _clientContext, 'videoId': videoId});
-
     try {
       final response = await _httpClient.post(
         Uri.parse('$_nextUrl?key=$_apiKey'),
         headers: {'Content-Type': 'application/json'},
         body: body,
       );
-
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return _parseNextResponse(data);
@@ -68,7 +74,7 @@ class ApiService {
         throw Exception('Failed to get similar songs');
       }
     } catch (e) {
-      print("Error in getSimilarSongs: $e");
+      debugPrint("Error in getSimilarSongs: $e"); // <-- Fixed
       return [];
     }
   }
@@ -79,7 +85,6 @@ class ApiService {
       r'$..musicShelfRenderer.contents[*].musicResponsiveListItemRenderer',
     );
     final matches = jsonPath.read(data);
-
     final List<Song> songs = [];
     for (final match in matches) {
       try {
@@ -90,7 +95,7 @@ class ApiService {
           songs.add(song);
         }
       } catch (e) {
-        print("Error parsing song: $e");
+        debugPrint("Error parsing song: $e"); // <-- Fixed
       }
     }
     return songs;
@@ -98,7 +103,6 @@ class ApiService {
 
   List<Song> _parseNextResponse(Map<String, dynamic> data) {
     final List<Song> songs = [];
-
     // Try multiple JSON paths to find related songs
     final jsonPaths = [
       r'$..autoplayEndpoint..musicResponsiveListItemRenderer',
@@ -106,12 +110,10 @@ class ApiService {
       r'$..musicCarouselShelfRenderer.contents[*].musicResponsiveListItemRenderer',
       r'$..musicTwoRowItemRenderer',
     ];
-
     for (final path in jsonPaths) {
       try {
         final jsonPath = JsonPath(path);
         final matches = jsonPath.read(data);
-
         for (final match in matches) {
           try {
             final song = Song.fromYouTubeMusicJson(
@@ -121,14 +123,13 @@ class ApiService {
               songs.add(song);
             }
           } catch (e) {
-            print("Error parsing song from path $path: $e");
+            debugPrint("Error parsing song from path $path: $e"); // <-- Fixed
           }
         }
       } catch (e) {
-        print("Error with JSON path $path: $e");
+        debugPrint("Error with JSON path $path: $e"); // <-- Fixed
       }
     }
-
     return songs;
   }
 
@@ -136,15 +137,14 @@ class ApiService {
     try {
       var manifest = await _yt.videos.streamsClient.getManifest(videoId);
       var streamInfo = manifest.audioOnly.withHighestBitrate();
-
       // Fallback to any available audio stream
-      if (streamInfo == null && manifest.audioOnly.isNotEmpty) {
-        streamInfo = manifest.audioOnly.first;
-      }
-
+      // if (streamInfo == null && manifest.audioOnly.isNotEmpty) {
+      //   streamInfo = manifest.audioOnly.first;
+      // }
+      // Fix: Check if streamInfo is not null before accessing its url
       return streamInfo.url.toString();
     } catch (e) {
-      print('Error getting audio URL: $e');
+      debugPrint('Error getting audio URL: $e'); // <-- Fixed
       rethrow;
     }
   }

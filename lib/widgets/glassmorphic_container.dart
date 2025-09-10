@@ -6,7 +6,6 @@ class GlassmorphicContainer extends StatelessWidget {
   final double borderRadius;
   final EdgeInsetsGeometry padding;
   final EdgeInsetsGeometry margin;
-
   const GlassmorphicContainer({
     super.key,
     required this.child,
@@ -28,15 +27,15 @@ class GlassmorphicContainer extends StatelessWidget {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.white.withOpacity(0.15),
-                  Colors.white.withOpacity(0.05),
+                  Colors.white.withValues(alpha: 0.15), // <-- Fixed
+                  Colors.white.withValues(alpha: 0.05), // <-- Fixed
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(borderRadius),
               border: Border.all(
-                color: Colors.white.withOpacity(0.2),
+                color: Colors.white.withValues(alpha: 0.2), // <-- Fixed
                 width: 1.0,
               ),
             ),

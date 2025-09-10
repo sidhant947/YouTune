@@ -114,7 +114,7 @@ class Song extends HiveObject {
         imageUrl: imageUrl,
       );
     } catch (e) {
-      print("Error parsing song from JSON. Corrupted data: $e");
+      // print("Error parsing song from JSON. Corrupted data: $e");
       return null;
     }
   }

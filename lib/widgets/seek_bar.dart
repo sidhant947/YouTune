@@ -16,11 +16,9 @@ class SeekBarWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final audioController = Get.find<AudioPlayerController>();
-
     return Obx(() {
       final position = audioController.position.value;
       final duration = audioController.duration.value;
-
       return Column(
         children: [
           SliderTheme(
@@ -29,9 +27,11 @@ class SeekBarWidget extends StatelessWidget {
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7.0),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 15.0),
               activeTrackColor: Colors.white,
-              inactiveTrackColor: Colors.white.withOpacity(0.3),
+              inactiveTrackColor: Colors.white.withValues(
+                alpha: 0.3,
+              ), // <-- Fixed
               thumbColor: Colors.white,
-              overlayColor: Colors.white.withOpacity(0.2),
+              overlayColor: Colors.white.withValues(alpha: 0.2), // <-- Fixed
             ),
             child: Slider(
               value: position.inSeconds.toDouble().clamp(
@@ -56,14 +56,14 @@ class SeekBarWidget extends StatelessWidget {
                 Text(
                   _formatDuration(position),
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
+                    color: Colors.white.withValues(alpha: 0.7), // <-- Fixed
                     fontSize: 12,
                   ),
                 ),
                 Text(
                   _formatDuration(duration),
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
+                    color: Colors.white.withValues(alpha: 0.7), // <-- Fixed
                     fontSize: 12,
                   ),
                 ),

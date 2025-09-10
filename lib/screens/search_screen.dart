@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../widgets/song_list_item.dart';
 import '../controllers/audio_player_controller.dart';
 import '../widgets/glassmorphic_container.dart';
+// import 'package:flutter/foundation.dart'; // Import for debugPrint
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -25,7 +26,6 @@ class _SearchScreenState extends State<SearchScreen> {
   void _searchSongs() async {
     if (_searchController.text.isEmpty) return;
     FocusScope.of(context).unfocus();
-
     setState(() {
       _isLoading = true;
       _hasSearched = true;
@@ -36,7 +36,8 @@ class _SearchScreenState extends State<SearchScreen> {
         _songs = songs;
       });
     } catch (e) {
-      print(e);
+      debugPrint(e.toString()); // <-- Fixed
+      // Optionally show an error snackbar
     } finally {
       if (mounted) {
         setState(() {
@@ -50,13 +51,12 @@ class _SearchScreenState extends State<SearchScreen> {
   void dispose() {
     _searchController.dispose();
     _apiService.dispose();
-    super.dispose();
+    super.dispose(); // FIX: Call super.dispose()
   }
 
   @override
   Widget build(BuildContext context) {
     final audioController = Get.find<AudioPlayerController>();
-
     return Column(
       children: [
         Padding(
@@ -69,11 +69,19 @@ class _SearchScreenState extends State<SearchScreen> {
               cursorColor: Colors.white,
               decoration: InputDecoration(
                 hintText: 'Search songs or artists...',
-                hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                hintStyle: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                ), // <-- Fixed
                 border: InputBorder.none,
-                icon: Icon(Icons.search, color: Colors.white.withOpacity(0.7)),
+                icon: Icon(
+                  Icons.search,
+                  color: Colors.white.withValues(alpha: 0.7),
+                ), // <-- Fixed
                 suffixIcon: IconButton(
-                  icon: Icon(Icons.add, color: Colors.white.withOpacity(0.7)),
+                  icon: Icon(
+                    Icons.add,
+                    color: Colors.white.withValues(alpha: 0.7),
+                  ), // <-- Fixed
                   onPressed: _songs.isNotEmpty
                       ? () => audioController.addToQueueMultiple(_songs)
                       : null,
@@ -93,14 +101,18 @@ class _SearchScreenState extends State<SearchScreen> {
               ? Center(
                   child: Text(
                     'Find your next favorite song.',
-                    style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                    ), // <-- Fixed
                   ).animate().fade(),
                 )
               : _songs.isEmpty
               ? Center(
                   child: Text(
                     'No results found.',
-                    style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                    ), // <-- Fixed
                   ).animate().fade(),
                 )
               : GridView.builder(
@@ -131,7 +143,9 @@ class _SearchScreenState extends State<SearchScreen> {
                           child: IconButton(
                             icon: Icon(
                               Icons.add_circle,
-                              color: Colors.white.withOpacity(0.8),
+                              color: Colors.white.withValues(
+                                alpha: 0.8,
+                              ), // <-- Fixed
                               size: 28,
                             ),
                             onPressed: () {

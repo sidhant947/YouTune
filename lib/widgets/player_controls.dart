@@ -24,29 +24,55 @@ class PlayerControls extends StatelessWidget {
                 ? () => audioController.playPrevious()
                 : null,
           ),
-          IconButton(
-            icon: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              transitionBuilder: (child, animation) {
-                return ScaleTransition(scale: animation, child: child);
-              },
-              child: Icon(
-                audioController.isPlaying.value
-                    ? Icons.pause_circle_filled_rounded
-                    : Icons.play_circle_filled_rounded,
-                key: ValueKey<bool>(audioController.isPlaying.value),
-                color: Colors.white,
-                size: 72,
-              ),
+          // Center Play/Pause Button with Loading Indicator
+          Obx(
+            // <-- Wrap the main button in Obx to listen to isPreparing
+            () => IconButton(
+              icon:
+                  audioController
+                      .isPreparing
+                      .value // <-- Check isPreparing
+                  ? const SizedBox(
+                      height: 50, // Approximate size of the icon for layout
+                      width: 50,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3.0,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : AnimatedSwitcher(
+                      // <-- Normal icon when not preparing
+                      duration: const Duration(milliseconds: 300),
+                      transitionBuilder: (child, animation) {
+                        return ScaleTransition(scale: animation, child: child);
+                      },
+                      child: Icon(
+                        audioController.isPlaying.value
+                            ? Icons.pause_circle_filled_rounded
+                            : Icons.play_circle_filled_rounded,
+                        key: ValueKey<bool>(audioController.isPlaying.value),
+                        color: Colors.white,
+                        size: 72,
+                      ),
+                    ),
+              iconSize: 72, // Ensure size matches the Icon
+              onPressed:
+                  audioController
+                      .isPreparing
+                      .value // <-- Disable while preparing
+                  ? null
+                  : () {
+                      // <-- Enable play/pause when ready
+                      if (audioController.isPlaying.value) {
+                        audioController.pause();
+                      } else {
+                        audioController.resume();
+                      }
+                    },
             ),
-            onPressed: () {
-              if (audioController.isPlaying.value) {
-                audioController.pause();
-              } else {
-                audioController.resume();
-              }
-            },
-          ).animate().scale(delay: 100.ms),
+          ).animate().scale(
+            delay: 100.ms,
+          ), // Keep the animation for the button itself
           IconButton(
             icon: const Icon(
               Icons.skip_next_rounded,

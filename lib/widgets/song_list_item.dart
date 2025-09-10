@@ -6,7 +6,6 @@ import 'glassmorphic_container.dart';
 class SongListItem extends StatelessWidget {
   final Song song;
   final VoidCallback onTap;
-
   const SongListItem({super.key, required this.song, required this.onTap});
 
   @override
@@ -15,7 +14,6 @@ class SongListItem extends StatelessWidget {
     if (song.album != null && song.album!.isNotEmpty) {
       subtitleText += ' • ${song.album}';
     }
-
     return GestureDetector(
       onTap: onTap,
       child: GlassmorphicContainer(
@@ -34,13 +32,14 @@ class SongListItem extends StatelessWidget {
                   imageUrl: song.imageUrl,
                   fit: BoxFit.cover,
                   width: double.infinity,
-                  placeholder: (context, url) =>
-                      Container(color: Colors.white.withOpacity(0.1)),
+                  placeholder: (context, url) => Container(
+                    color: Colors.white.withValues(alpha: 0.1),
+                  ), // <-- Fixed
                   errorWidget: (context, url, error) => Container(
-                    color: Colors.white.withOpacity(0.1),
+                    color: Colors.white.withValues(alpha: 0.1), // <-- Fixed
                     child: Icon(
                       Icons.broken_image,
-                      color: Colors.white.withOpacity(0.3),
+                      color: Colors.white.withValues(alpha: 0.3), // <-- Fixed
                     ),
                   ),
                 ),
@@ -71,7 +70,7 @@ class SongListItem extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7), // <-- Fixed
                       ),
                     ),
                   ],

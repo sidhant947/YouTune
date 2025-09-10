@@ -1,3 +1,4 @@
+// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:get/get.dart';
@@ -12,7 +13,6 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final downloadController = Get.find<DownloadController>();
     final audioController = Get.find<AudioPlayerController>();
-
     return Obx(() {
       if (downloadController.downloadedSongs.isEmpty) {
         return Center(
@@ -22,21 +22,23 @@ class HomeScreen extends StatelessWidget {
               Icon(
                 Icons.library_music_outlined,
                 size: 80,
-                color: Colors.white.withOpacity(0.5),
+                color: Colors.white.withValues(alpha: 0.5), // <-- Fixed
               ),
               const SizedBox(height: 20),
               Text(
                 'Your Library is Empty',
                 style: TextStyle(
                   fontSize: 18,
-                  color: Colors.white.withOpacity(0.8),
+                  color: Colors.white.withValues(alpha: 0.8), // <-- Fixed
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 'Songs you download will appear here.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                ), // <-- Fixed
               ),
             ],
           ).animate().fade(duration: 500.ms),
@@ -62,13 +64,15 @@ class HomeScreen extends StatelessWidget {
                 'Removed',
                 '${song.title} removed from your library.',
                 snackPosition: SnackPosition.BOTTOM,
-                backgroundColor: Colors.white.withOpacity(0.1),
+                backgroundColor: Colors.white.withValues(
+                  alpha: 0.1,
+                ), // <-- Fixed
                 colorText: Colors.white,
               );
             },
             background: Container(
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.8),
+                color: Colors.red.withValues(alpha: 0.8), // <-- Fixed
                 borderRadius: BorderRadius.circular(12),
               ),
               alignment: Alignment.centerRight,
@@ -77,7 +81,8 @@ class HomeScreen extends StatelessWidget {
             ),
             child: SongListItem(
               song: song,
-              onTap: () => audioController.play(song),
+              // Pass queueAllDownloaded: true when playing from Home/Library
+              onTap: () => audioController.play(song, queueAllDownloaded: true),
             ),
           ).animate().fade(delay: (index * 50).ms).slideY(begin: 0.2);
         },
