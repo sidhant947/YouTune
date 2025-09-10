@@ -1,16 +1,27 @@
-# youtune
+# 🎵 YouTune
 
-A new Flutter project.
+**YouTune** is a simple and minimalistic Flutter application that lets you stream and play music directly from **YouTube Music**. Designed with a focus on clean UI and smooth performance, YouTune offers a lightweight music experience without the clutter of full video content.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## ✨ Features
 
-A few resources to get you started if this is your first Flutter project:
+- 🎧 **Stream Music from YouTube Music**
+- 🧭 **Minimalistic UI** – Focus on what matters: the music
+- 🔍 **Search** your favorite tracks, albums, or artists
+- ❤️ **Lightweight & Fast** – No bloated features
+- ⏯️ Basic playback controls (Play, Pause, Skip, Seek)
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+---
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 🛡️ Disclaimer
+
+YouTune is an unofficial app and is **not affiliated with YouTube or YouTube Music** in any way. Please ensure you follow YouTube's Terms of Service when using this app.
+
+---
+
+## 🙌 Contributing
+
+Pull requests are welcome! If you have suggestions or find bugs, please open an issue.
+
+---
