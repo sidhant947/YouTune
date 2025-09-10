@@ -1,0 +1,2008 @@
+[lib/controllers/audio_player_controller.dart]
+```
+// lib/controllers/audio_player_controller.dart
+import 'package:get/get.dart';
+import 'package:audioplayers/audioplayers.dart';
+import '../models/song.dart';
+import '../services/api_service.dart';
+import '../services/database_service.dart';
+import 'download_controller.dart';
+import 'dart:io'; // Add this import for File check
+
+class AudioPlayerController extends GetxController {
+  final AudioPlayer audioPlayer = AudioPlayer();
+  final DatabaseService _dbService = Get.find<DatabaseService>();
+  final DownloadController _downloadController = Get.find<DownloadController>();
+  final ApiService _apiService = ApiService();
+
+  var currentSong = Rx<Song?>(null);
+  var isPlaying = false.obs;
+  var queue = <Song>[].obs;
+  var currentIndex = 0.obs;
+  var isLoadingQueue = false.obs;
+  // New variable to track if a song is being prepared/fetched for UI feedback
+  var isPreparing = false.obs; // <-- Added for loading indicator
+
+  // Reactive variables to hold the player's state.
+  var duration = Duration.zero.obs;
+  var position = Duration.zero.obs;
+
+  @override
+  void onInit() {
+    super.onInit();
+    // Listen to player state and update our Rx variables.
+    audioPlayer.onPlayerStateChanged.listen((state) {
+      isPlaying.value = state == PlayerState.playing;
+    });
+    audioPlayer.onDurationChanged.listen((d) {
+      duration.value = d;
+    });
+    audioPlayer.onPositionChanged.listen((p) {
+      position.value = p;
+    });
+    // Listen for when a song completes to play next in queue
+    audioPlayer.onPlayerComplete.listen((event) {
+      playNext();
+    });
+  }
+
+  Future<void> play(Song song, {bool addToQueue = true}) async {
+    // Set preparing state immediately for UI feedback
+    isPreparing.value = true; // <-- Set to true at the start
+
+    if (currentSong.value?.id == song.id) {
+      if (audioPlayer.state == PlayerState.playing) {
+        await pause();
+      } else {
+        await resume();
+      }
+      isPreparing.value = false; // <-- Reset if toggling play/pause
+      return;
+    }
+
+    // Stop the current song and reset state before playing a new one.
+    await audioPlayer.stop();
+    duration.value = Duration.zero;
+    position.value = Duration.zero;
+    currentSong.value = song;
+
+    try {
+      // <-- Wrap main logic in try/finally for robustness
+      // If this is a new song (not from queue), fetch related songs
+      if (addToQueue && (queue.isEmpty || queue[0].id != song.id)) {
+        await _fetchRelatedSongs(song);
+      }
+
+      final downloadedSong = _dbService.getSong(song.id);
+      // Check if the file actually exists locally before trying to play it
+      if (downloadedSong?.filePath != null &&
+          downloadedSong!.filePath!.isNotEmpty &&
+          File(downloadedSong.filePath!).existsSync()) {
+        // Check file existence
+        print("Playing from local file: ${downloadedSong.filePath}");
+        await audioPlayer.play(DeviceFileSource(downloadedSong.filePath!));
+        // Optional: Trigger download to ensure cache is up-to-date or re-cache if needed
+        // This handles cases where the file might have been deleted manually
+        // We can ignore errors here as the file is already playing
+        _downloadController._downloadSong(song).catchError((e) {
+          // <-- Corrected call
+          print("Background re-cache check/trigger failed for ${song.id}: $e");
+        });
+      } else {
+        print("Streaming from network and starting download...");
+        final audioUrl = await _apiService.getAudioUrl(song.id);
+        await audioPlayer.play(UrlSource(audioUrl));
+        // Start caching the song in the background after playback starts
+        // Use .then() or await based on whether you want play() to wait
+        // Using .then() allows playback to start immediately
+        _downloadController
+            ._downloadSong(song)
+            .then((_) {
+              // <-- Corrected call
+              print("Background download initiated/completed for ${song.id}");
+            })
+            .catchError((error) {
+              // Handle potential errors during the download initiation
+              print(
+                "Error initiating background download for ${song.id}: $error",
+              );
+              // Optionally show a snackbar to the user
+              // Get.snackbar('Download Error', 'Failed to cache ${song.title}');
+            });
+      }
+    } catch (e) {
+      print("Error playing/streaming song: $e");
+      Get.snackbar('Playback Error', 'Could not play the selected song.');
+    } finally {
+      // Ensure isPreparing is set to false regardless of success or failure
+      // This is crucial for the UI loading indicator
+      isPreparing.value = false; // <-- Reset in finally block
+    }
+  }
+
+  Future<void> _fetchRelatedSongs(Song song) async {
+    isLoadingQueue.value = true;
+    try {
+      // ... (rest of the method remains largely the same)
+      // Try multiple strategies to get related songs
+      List<Song> relatedSongs = [];
+      // Strategy 1: Get songs by the same artist
+      try {
+        final artistSongs = await _apiService.searchSongs(
+          song.artist,
+          limit: 5,
+        );
+        relatedSongs.addAll(artistSongs.where((s) => s.id != song.id));
+      } catch (e) {
+        print("Error fetching artist songs: $e");
+      }
+      // Strategy 2: Get songs with similar title/theme
+      try {
+        final titleWords = song.title.split(' ');
+        if (titleWords.length > 1) {
+          // Use the most significant word (longest) for search
+          final searchTerm = titleWords.reduce(
+            (a, b) => a.length > b.length ? a : b,
+          );
+          if (searchTerm.length > 3) {
+            // Only use meaningful words
+            final similarSongs = await _apiService.searchSongs(
+              searchTerm,
+              limit: 5,
+            );
+            relatedSongs.addAll(similarSongs.where((s) => s.id != song.id));
+          }
+        }
+      } catch (e) {
+        print("Error fetching similar title songs: $e");
+      }
+      // Strategy 3: Get YouTube's recommended songs
+      try {
+        final recommendedSongs = await _apiService.getSimilarSongs(song.id);
+        relatedSongs.addAll(recommendedSongs.where((s) => s.id != song.id));
+      } catch (e) {
+        print("Error fetching recommended songs: $e");
+      }
+      // Remove duplicates and limit to 10 songs
+      final uniqueSongs = <String, Song>{};
+      for (var s in relatedSongs) {
+        // Renamed loop variable to avoid shadowing
+        if (!uniqueSongs.containsKey(s.id)) {
+          uniqueSongs[s.id] = s;
+        }
+      }
+      final finalList = uniqueSongs.values.toList();
+      // If we still don't have enough songs, add some popular ones as fallback
+      if (finalList.length < 5) {
+        try {
+          final popularSongs = await _apiService.searchSongs(
+            'popular songs',
+            limit: 10,
+          );
+          for (var popularSong in popularSongs) {
+            if (finalList.length >= 10) break;
+            if (popularSong.id != song.id &&
+                !uniqueSongs.containsKey(popularSong.id)) {
+              finalList.add(popularSong);
+              uniqueSongs[popularSong.id] = popularSong;
+            }
+          }
+        } catch (e) {
+          print("Error fetching popular songs: $e");
+        }
+      }
+      // Shuffle the list to add variety
+      finalList.shuffle();
+      // Limit to maximum 10 songs in queue
+      final limitedList = finalList.take(10).toList();
+      queue.value = [song, ...limitedList];
+      currentIndex.value = 0;
+      if (limitedList.isEmpty) {
+        Get.snackbar(
+          'Info',
+          'No related songs found. Add songs to queue manually.',
+        );
+      }
+    } catch (e) {
+      print("Error fetching related songs: $e");
+      // If we can't get related songs, at least add the current song to queue
+      queue.value = [song];
+      currentIndex.value = 0;
+      Get.snackbar('Queue Error', 'Could not load related songs.');
+    } finally {
+      isLoadingQueue.value = false;
+    }
+  }
+
+  // ... (rest of the methods like playNext, playPrevious, etc. remain the same)
+  Future<void> playNext() async {
+    if (queue.isEmpty || currentIndex.value >= queue.length - 1) {
+      // If we're at the end of the queue, try to get more related songs
+      if (currentSong.value != null) {
+        await _fetchMoreSongs();
+        if (currentIndex.value < queue.length - 1) {
+          currentIndex.value++;
+          await play(queue[currentIndex.value], addToQueue: false);
+        } else {
+          // If no more songs, just restart the current one
+          await play(currentSong.value!, addToQueue: false);
+        }
+      }
+      return;
+    }
+    currentIndex.value++;
+    await play(queue[currentIndex.value], addToQueue: false);
+  }
+
+  Future<void> _fetchMoreSongs() async {
+    if (currentSong.value == null) return;
+    isLoadingQueue.value = true;
+    try {
+      // Get more songs based on the current song's artist
+      final moreSongs = await _apiService.searchSongs(
+        currentSong.value!.artist,
+        limit: 5,
+      );
+      // Filter out songs already in queue
+      final existingIds = queue.map((s) => s.id).toSet();
+      final newSongs = moreSongs
+          .where((s) => !existingIds.contains(s.id))
+          .toList();
+      if (newSongs.isNotEmpty) {
+        queue.addAll(newSongs);
+        Get.snackbar(
+          'Queue Updated',
+          'Added ${newSongs.length} more songs to queue',
+        );
+      }
+    } catch (e) {
+      print("Error fetching more songs: $e");
+    } finally {
+      isLoadingQueue.value = false;
+    }
+  }
+
+  Future<void> playPrevious() async {
+    if (currentIndex.value <= 0) return;
+    currentIndex.value--;
+    await play(queue[currentIndex.value], addToQueue: false);
+  }
+
+  void addToQueue(Song song) {
+    // Add song after the current position
+    if (currentIndex.value < queue.length - 1) {
+      queue.insert(currentIndex.value + 1, song);
+    } else {
+      queue.add(song);
+    }
+    Get.snackbar('Added to Queue', '${song.title} added to queue');
+  }
+
+  void addToQueueMultiple(List<Song> songs) {
+    queue.addAll(songs);
+    Get.snackbar('Queue Updated', 'Added ${songs.length} songs to queue');
+  }
+
+  void removeFromQueue(int index) {
+    if (index > currentIndex.value && index < queue.length) {
+      final removedSong = queue[index];
+      queue.removeAt(index);
+      Get.snackbar('Removed from Queue', '${removedSong.title} removed');
+    }
+  }
+
+  void clearQueue() {
+    final current = currentSong.value;
+    queue.value = current != null ? [current] : [];
+    currentIndex.value = 0;
+    Get.snackbar('Queue Cleared', 'All songs removed from queue');
+  }
+
+  Future<void> shuffleQueue() async {
+    if (queue.length <= 1) return;
+    final current = queue[currentIndex.value];
+    final remainingSongs = queue.sublist(currentIndex.value + 1)..shuffle();
+    queue.value = [current, ...remainingSongs];
+    currentIndex.value = 0;
+    Get.snackbar('Queue Shuffled', 'Remaining songs have been shuffled');
+  }
+
+  Future<void> pause() async {
+    await audioPlayer.pause();
+  }
+
+  Future<void> resume() async {
+    await audioPlayer.resume();
+  }
+
+  Future<void> seek(Duration position) async {
+    await audioPlayer.seek(position);
+  }
+
+  @override
+  void onClose() {
+    audioPlayer.dispose();
+    _apiService.dispose();
+    super.onClose();
+  }
+}
+
+```
+
+[lib/services/api_service.dart]
+```
+// lib/services/api_service.dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:json_path/json_path.dart';
+import '../models/song.dart';
+
+class ApiService {
+  final YoutubeExplode _yt = YoutubeExplode();
+  final http.Client _httpClient = http.Client();
+
+  // This is the internal API endpoint YouTube Music uses.
+  static const String _searchUrl =
+      'https://music.youtube.com/youtubei/v1/search';
+  static const String _nextUrl = 'https://music.youtube.com/youtubei/v1/next';
+
+  // This is a public key used by YouTube Music web client.
+  static const String _apiKey = 'AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30';
+
+  // This "context" tells the API that we are a web client,
+  // ensuring we get music-focused results.
+  final Map<String, dynamic> _clientContext = {
+    'client': {'clientName': 'WEB_REMIX', 'clientVersion': '1.20240524.01.00'},
+  };
+
+  Future<List<Song>> searchSongs(String query, {int limit = 20}) async {
+    final body = json.encode({
+      'context': _clientContext,
+      'query': query,
+      // This 'params' value specifically asks for songs.
+      'params': 'EgWKAQIIAWoOEAMQBBAJEAoQBRAQEBU%3D',
+    });
+
+    try {
+      final response = await _httpClient.post(
+        Uri.parse('$_searchUrl?key=$_apiKey'),
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final songs = _parseSearchResponse(data);
+        return songs.take(limit).toList();
+      } else {
+        throw Exception('Failed to search songs');
+      }
+    } catch (e) {
+      print("Error in searchSongs: $e");
+      return [];
+    }
+  }
+
+  Future<List<Song>> getSimilarSongs(String videoId) async {
+    final body = json.encode({'context': _clientContext, 'videoId': videoId});
+
+    try {
+      final response = await _httpClient.post(
+        Uri.parse('$_nextUrl?key=$_apiKey'),
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return _parseNextResponse(data);
+      } else {
+        throw Exception('Failed to get similar songs');
+      }
+    } catch (e) {
+      print("Error in getSimilarSongs: $e");
+      return [];
+    }
+  }
+
+  List<Song> _parseSearchResponse(Map<String, dynamic> data) {
+    // This JsonPath expression navigates the complex JSON to find the song list.
+    final jsonPath = JsonPath(
+      r'$..musicShelfRenderer.contents[*].musicResponsiveListItemRenderer',
+    );
+    final matches = jsonPath.read(data);
+
+    final List<Song> songs = [];
+    for (final match in matches) {
+      try {
+        final song = Song.fromYouTubeMusicJson(
+          match.value as Map<String, dynamic>,
+        );
+        if (song != null) {
+          songs.add(song);
+        }
+      } catch (e) {
+        print("Error parsing song: $e");
+      }
+    }
+    return songs;
+  }
+
+  List<Song> _parseNextResponse(Map<String, dynamic> data) {
+    final List<Song> songs = [];
+
+    // Try multiple JSON paths to find related songs
+    final jsonPaths = [
+      r'$..autoplayEndpoint..musicResponsiveListItemRenderer',
+      r'$..itemSectionRenderer.contents[*].musicResponsiveListItemRenderer',
+      r'$..musicCarouselShelfRenderer.contents[*].musicResponsiveListItemRenderer',
+      r'$..musicTwoRowItemRenderer',
+    ];
+
+    for (final path in jsonPaths) {
+      try {
+        final jsonPath = JsonPath(path);
+        final matches = jsonPath.read(data);
+
+        for (final match in matches) {
+          try {
+            final song = Song.fromYouTubeMusicJson(
+              match.value as Map<String, dynamic>,
+            );
+            if (song != null && !songs.any((s) => s.id == song.id)) {
+              songs.add(song);
+            }
+          } catch (e) {
+            print("Error parsing song from path $path: $e");
+          }
+        }
+      } catch (e) {
+        print("Error with JSON path $path: $e");
+      }
+    }
+
+    return songs;
+  }
+
+  Future<String> getAudioUrl(String videoId) async {
+    try {
+      var manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      var streamInfo = manifest.audioOnly.withHighestBitrate();
+
+      // Fallback to any available audio stream
+      if (streamInfo == null && manifest.audioOnly.isNotEmpty) {
+        streamInfo = manifest.audioOnly.first;
+      }
+
+      return streamInfo.url.toString();
+    } catch (e) {
+      print('Error getting audio URL: $e');
+      rethrow;
+    }
+  }
+
+  void dispose() {
+    _yt.close();
+    _httpClient.close();
+  }
+}
+
+```
+
+[lib/models/song.dart]
+```
+// lib/models/song.dart
+import 'package:hive/hive.dart';
+
+part 'song.g.dart';
+
+@HiveType(typeId: 0)
+class Song extends HiveObject {
+  @HiveField(0)
+  final String id;
+
+  @HiveField(1)
+  final String title;
+
+  @HiveField(2)
+  final String artist;
+
+  @HiveField(3)
+  final String? album;
+
+  @HiveField(4)
+  final String imageUrl;
+
+  @HiveField(5)
+  String? filePath;
+
+  Song({
+    required this.id,
+    required this.title,
+    required this.artist,
+    this.album,
+    required this.imageUrl,
+    this.filePath,
+  });
+
+  // Add copyWith method for easier manipulation
+  Song copyWith({
+    String? id,
+    String? title,
+    String? artist,
+    String? album,
+    String? imageUrl,
+    String? filePath,
+  }) {
+    return Song(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      artist: artist ?? this.artist,
+      album: album ?? this.album,
+      imageUrl: imageUrl ?? this.imageUrl,
+      filePath: filePath ?? this.filePath,
+    );
+  }
+
+  static Song? fromYouTubeMusicJson(Map<String, dynamic> json) {
+    try {
+      final videoId =
+          json['flexColumns'][0]['musicResponsiveListItemFlexColumnRenderer']['text']['runs'][0]['navigationEndpoint']?['watchEndpoint']?['videoId']
+              as String?;
+
+      if (videoId == null) {
+        return null;
+      }
+
+      final title =
+          (json['flexColumns'][0]['musicResponsiveListItemFlexColumnRenderer']['text']?['runs']
+                  as List?)
+              ?.map((r) => r['text'])
+              .join() ??
+          'Untitled';
+
+      final allArtistInfoRuns =
+          json['flexColumns'][1]['musicResponsiveListItemFlexColumnRenderer']['text']?['runs']
+              as List?;
+      final allArtistInfoText =
+          allArtistInfoRuns?.map((r) => r['text']).join() ?? '';
+
+      final infoParts = allArtistInfoText.split(' • ');
+
+      final artist = infoParts.isNotEmpty
+          ? infoParts[0].trim()
+          : 'Unknown Artist';
+      final album = infoParts.length > 1 ? infoParts[1].trim() : null;
+
+      final thumbnails =
+          json['thumbnail']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails']
+              as List?;
+
+      // **FIX:** Modify the URL to request a high-resolution image.
+      String imageUrl = '';
+      if (thumbnails != null && thumbnails.isNotEmpty) {
+        // Start with the URL provided by the API (usually the last one is best).
+        final baseImageUrl = thumbnails.last['url'] as String? ?? '';
+
+        // Google content URLs can be modified to request a different size.
+        if (baseImageUrl.contains('googleusercontent.com')) {
+          // We replace the size parameter (e.g., "=w120-h120") with a larger one.
+          final urlParts = baseImageUrl.split('=');
+          if (urlParts.length > 1) {
+            // Request a 600x600 pixel image for high quality.
+            imageUrl = '${urlParts[0]}=w600-h600-l90-rj';
+          } else {
+            imageUrl = baseImageUrl;
+          }
+        } else {
+          imageUrl = baseImageUrl;
+        }
+      }
+
+      return Song(
+        id: videoId,
+        title: title.isNotEmpty ? title : 'Untitled',
+        artist: artist,
+        album: album,
+        imageUrl: imageUrl,
+      );
+    } catch (e) {
+      print("Error parsing song from JSON. Corrupted data: $e");
+      return null;
+    }
+  }
+}
+
+```
+
+[lib/controllers/navigation_controller.dart]
+```
+import 'package:get/get.dart';
+
+class NavigationController extends GetxController {
+  // A reactive variable to track the visibility of the search screen.
+  var isSearchVisible = false.obs;
+
+  void showSearch() {
+    isSearchVisible.value = true;
+  }
+
+  void showHome() {
+    isSearchVisible.value = false;
+  }
+}
+
+```
+
+[lib/controllers/download_controller.dart]
+```
+// lib/controllers/download_controller.dart
+import 'dart:io';
+import 'package:get/get.dart';
+import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
+import '../models/song.dart';
+import '../services/api_service.dart';
+import '../services/database_service.dart';
+
+enum DownloadStatus { notDownloaded, downloading, downloaded }
+
+class DownloadController extends GetxController {
+  final ApiService _apiService = ApiService();
+  final DatabaseService _dbService = Get.find<DatabaseService>();
+  final Dio _dio = Dio();
+
+  // Reactive variables for observing state changes.
+  var downloadedSongs = <Song>[].obs;
+  var downloadStatus = <String, DownloadStatus>{}.obs;
+  var downloadProgress = <String, double>{}.obs;
+
+  @override
+  void onInit() {
+    super.onInit();
+    _fetchDownloadedSongs(); // Fetch songs on initialization
+  }
+
+  // Private method to fetch and update the list of downloaded songs
+  void _fetchDownloadedSongs() {
+    final songs = _dbService.getDownloadedSongs();
+    downloadedSongs.assignAll(songs);
+    // Initialize status for all downloaded songs.
+    for (var song in songs) {
+      downloadStatus[song.id] = DownloadStatus.downloaded;
+    }
+  }
+
+  // Public helper method to check if a song is downloaded/cached
+  bool isSongDownloaded(String songId) {
+    return downloadStatus[songId] == DownloadStatus.downloaded;
+  }
+
+  // Public method to get the local file path if cached
+  String? getCachedFilePath(String songId) {
+    final song = _dbService.getSong(songId);
+    return song?.filePath;
+  }
+
+  // Make the download method private as caching is handled by AudioPlayerController
+  Future<void> _downloadSong(Song song) async {
+    // Prevent redundant downloads/caching attempts
+    if (downloadStatus[song.id] != null &&
+        downloadStatus[song.id] != DownloadStatus.notDownloaded) {
+      print("Song ${song.id} is already cached or being cached.");
+      return;
+    }
+
+    downloadStatus[song.id] = DownloadStatus.downloading;
+    downloadProgress[song.id] = 0.0;
+    try {
+      final audioUrl = await _apiService.getAudioUrl(song.id);
+      final directory = await getApplicationDocumentsDirectory();
+      final filePath =
+          '${directory.path}/${song.id}.m4a'; // Using m4a as it's common
+
+      await _dio.download(
+        audioUrl,
+        filePath,
+        onReceiveProgress: (received, total) {
+          if (total != -1) {
+            downloadProgress[song.id] = received / total;
+          }
+        },
+      );
+
+      // Update song object with the local file path and save to DB
+      song.filePath = filePath;
+      await _dbService.addSong(song);
+      downloadStatus[song.id] = DownloadStatus.downloaded;
+      _fetchDownloadedSongs(); // Refresh the list of downloaded songs
+      print("Song ${song.id} downloaded and cached successfully.");
+    } catch (e) {
+      downloadStatus[song.id] = DownloadStatus.notDownloaded;
+      downloadProgress.remove(song.id); // Clean up progress on error
+      print("Download failed for ${song.id}: $e");
+    }
+  }
+
+  Future<void> deleteSong(Song song) async {
+    final filePath = song.filePath;
+    if (filePath != null) {
+      try {
+        final file = File(filePath);
+        if (await file.exists()) {
+          await file.delete();
+          print("Deleted cached file: $filePath");
+        }
+      } catch (e) {
+        print("Error deleting file $filePath: $e");
+      }
+    }
+    await _dbService.deleteSong(song.id);
+    downloadStatus.remove(song.id);
+    downloadProgress.remove(song.id); // Ensure progress is also removed
+    _fetchDownloadedSongs(); // Refresh the list
+    print("Song ${song.id} removed from database and cache tracking.");
+  }
+
+  @override
+  void onClose() {
+    _apiService.dispose();
+    _dio.close(); // Close Dio instance
+    super.onClose();
+  }
+}
+
+```
+
+[lib/models/song.g.dart]
+```
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
+part of 'song.dart';
+
+// **************************************************************************
+// TypeAdapterGenerator
+// **************************************************************************
+
+class SongAdapter extends TypeAdapter<Song> {
+  @override
+  final int typeId = 0;
+
+  @override
+  Song read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return Song(
+      id: fields[0] as String,
+      title: fields[1] as String,
+      artist: fields[2] as String,
+      album: fields[3] as String?,
+      imageUrl: fields[4] as String,
+      filePath: fields[5] as String?,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, Song obj) {
+    writer
+      ..writeByte(6)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.title)
+      ..writeByte(2)
+      ..write(obj.artist)
+      ..writeByte(3)
+      ..write(obj.album)
+      ..writeByte(4)
+      ..write(obj.imageUrl)
+      ..writeByte(5)
+      ..write(obj.filePath);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SongAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+```
+
+[lib/main.dart]
+```
+// lib/main.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:get/get.dart';
+import 'screens/home_screen.dart';
+import 'screens/search_screen.dart';
+import 'services/database_service.dart';
+import 'controllers/audio_player_controller.dart';
+import 'controllers/download_controller.dart';
+import 'controllers/navigation_controller.dart';
+import 'widgets/mini_player.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await DatabaseService.init();
+  Get.put(DatabaseService());
+  Get.put(DownloadController());
+  Get.put(AudioPlayerController());
+  Get.put(NavigationController());
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return GetMaterialApp(
+      title: 'Youtune',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: Colors.black,
+        primaryColor: Colors.white,
+        fontFamily: 'Inter',
+        colorScheme: const ColorScheme.dark(
+          primary: Colors.white,
+          secondary: Colors.white,
+          surface: Colors.black,
+        ),
+      ),
+      debugShowCheckedModeBanner: false,
+      home: const MainScreen(),
+    );
+  }
+}
+
+class MainScreen extends StatelessWidget {
+  const MainScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final navController = Get.find<NavigationController>();
+    const double miniPlayerHeight = 80.0;
+    return Obx(
+      () => Scaffold(
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          backgroundColor: Colors.black.withOpacity(0.3),
+          elevation: 0,
+          title: Text(
+            navController.isSearchVisible.value ? 'Search' : 'Library',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ).animate().fade(duration: 300.ms),
+          leading: navController.isSearchVisible.value
+              ? IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back_ios_new,
+                    color: Colors.white,
+                  ),
+                  onPressed: () => navController.showHome(),
+                )
+              : null,
+        ),
+        body: Stack(
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 500),
+              child: navController.isSearchVisible.value
+                  ? const SearchScreen()
+                  : const HomeScreen(),
+            ),
+            const Positioned(bottom: 0, left: 0, right: 0, child: MiniPlayer()),
+          ],
+        ),
+        floatingActionButton: navController.isSearchVisible.value
+            ? null
+            : Padding(
+                padding: const EdgeInsets.only(bottom: miniPlayerHeight),
+                child: FloatingActionButton(
+                  backgroundColor: Colors.white.withOpacity(0.9),
+                  foregroundColor: Colors.black,
+                  elevation: 10,
+                  child: const Icon(Icons.search),
+                  // FIX: Wrap onPressed in a function
+                  onPressed: () {
+                    navController.showSearch();
+                  },
+                ).animate().scale(delay: 300.ms),
+              ),
+      ),
+    );
+  }
+}
+
+```
+
+[lib/services/database_service.dart]
+```
+import 'package:hive_flutter/hive_flutter.dart';
+import '../models/song.dart';
+
+class DatabaseService {
+  static const String songsBoxName = 'songs';
+
+  // Initialize Hive and open boxes.
+  static Future<void> init() async {
+    await Hive.initFlutter();
+    Hive.registerAdapter(SongAdapter());
+    await Hive.openBox<Song>(songsBoxName);
+  }
+
+  Box<Song> get songsBox => Hive.box<Song>(songsBoxName);
+
+  // Add or update a song in the database.
+  Future<void> addSong(Song song) async {
+    await songsBox.put(song.id, song);
+  }
+
+  // Get a list of all downloaded songs.
+  List<Song> getDownloadedSongs() {
+    return songsBox.values.toList();
+  }
+
+  // Get a single song by its ID.
+  Song? getSong(String songId) {
+    return songsBox.get(songId);
+  }
+
+  // Delete a song from the database.
+  Future<void> deleteSong(String songId) async {
+    await songsBox.delete(songId);
+  }
+}
+
+```
+
+[lib/widgets/seek_bar.dart]
+```
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../controllers/audio_player_controller.dart';
+
+class SeekBarWidget extends StatelessWidget {
+  const SeekBarWidget({super.key});
+
+  String _formatDuration(Duration d) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    if (d.inHours > 0) {
+      return '${d.inHours}:${twoDigits(d.inMinutes.remainder(60))}:${twoDigits(d.inSeconds.remainder(60))}';
+    }
+    return '${twoDigits(d.inMinutes.remainder(60))}:${twoDigits(d.inSeconds.remainder(60))}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final audioController = Get.find<AudioPlayerController>();
+
+    return Obx(() {
+      final position = audioController.position.value;
+      final duration = audioController.duration.value;
+
+      return Column(
+        children: [
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 2.0,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7.0),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 15.0),
+              activeTrackColor: Colors.white,
+              inactiveTrackColor: Colors.white.withOpacity(0.3),
+              thumbColor: Colors.white,
+              overlayColor: Colors.white.withOpacity(0.2),
+            ),
+            child: Slider(
+              value: position.inSeconds.toDouble().clamp(
+                0.0,
+                duration.inSeconds.toDouble(),
+              ),
+              max: duration.inSeconds.toDouble() > 0
+                  ? duration.inSeconds.toDouble()
+                  : 1.0,
+              onChanged: (value) {
+                audioController.audioPlayer.seek(
+                  Duration(seconds: value.toInt()),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _formatDuration(position),
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 12,
+                  ),
+                ),
+                Text(
+                  _formatDuration(duration),
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    });
+  }
+}
+
+```
+
+[lib/screens/queue_screen.dart]
+```
+// lib/screens/queue_screen.dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../controllers/audio_player_controller.dart';
+import '../models/song.dart';
+import '../widgets/glassmorphic_container.dart';
+
+class QueueScreen extends StatelessWidget {
+  const QueueScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final audioController = Get.find<AudioPlayerController>();
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: Colors.black.withOpacity(0.3),
+        elevation: 0,
+        title: Obx(
+          () => Text(
+            'Queue (${audioController.queue.length} songs)',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+          onPressed: () => Get.back(),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.shuffle_rounded),
+            onPressed: () => audioController.shuffleQueue(),
+            tooltip: 'Shuffle queue',
+          ),
+          IconButton(
+            icon: const Icon(Icons.clear_all_rounded),
+            onPressed: () => audioController.clearQueue(),
+            tooltip: 'Clear queue',
+          ),
+        ],
+      ),
+      body: GlassmorphicContainer(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
+        child: Obx(() {
+          if (audioController.queue.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.queue_music_rounded,
+                    size: 64,
+                    color: Colors.white.withOpacity(0.5),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Queue is empty',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 18,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Play a song to start a queue',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.5),
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return ListView.builder(
+            itemCount: audioController.queue.length,
+            itemBuilder: (context, index) {
+              final song = audioController.queue[index];
+              final isCurrent = index == audioController.currentIndex.value;
+
+              return Dismissible(
+                key: Key('${song.id}-$index'),
+                direction: index > audioController.currentIndex.value
+                    ? DismissDirection.endToStart
+                    : DismissDirection.none,
+                background: Container(
+                  color: Colors.red.withOpacity(0.3),
+                  alignment: Alignment.centerRight,
+                  padding: EdgeInsets.only(right: 20),
+                  child: Icon(Icons.delete_outline, color: Colors.white),
+                ),
+                onDismissed: (direction) {
+                  audioController.removeFromQueue(index);
+                },
+                child: ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CachedNetworkImage(
+                      imageUrl: song.imageUrl,
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  title: Text(
+                    song.title,
+                    style: TextStyle(
+                      color: isCurrent
+                          ? Colors.white
+                          : Colors.white.withOpacity(0.8),
+                      fontWeight: isCurrent
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                  subtitle: Text(
+                    song.artist,
+                    style: TextStyle(
+                      color: isCurrent
+                          ? Colors.white.withOpacity(0.9)
+                          : Colors.white.withOpacity(0.6),
+                    ),
+                  ),
+                  trailing: isCurrent
+                      ? Icon(Icons.equalizer_rounded, color: Colors.white)
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${index + 1}',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.6),
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            IconButton(
+                              icon: Icon(
+                                Icons.play_arrow_rounded,
+                                color: Colors.white.withOpacity(0.7),
+                              ),
+                              onPressed: () {
+                                audioController.currentIndex.value = index;
+                                audioController.play(song, addToQueue: false);
+                              },
+                            ),
+                          ],
+                        ),
+                  onTap: () {
+                    audioController.currentIndex.value = index;
+                    audioController.play(song, addToQueue: false);
+                  },
+                ),
+              );
+            },
+          );
+        }),
+      ),
+    );
+  }
+}
+
+```
+
+[lib/screens/home_screen.dart]
+```
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:get/get.dart';
+import '../widgets/song_list_item.dart';
+import '../controllers/audio_player_controller.dart';
+import '../controllers/download_controller.dart';
+
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final downloadController = Get.find<DownloadController>();
+    final audioController = Get.find<AudioPlayerController>();
+
+    return Obx(() {
+      if (downloadController.downloadedSongs.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.library_music_outlined,
+                size: 80,
+                color: Colors.white.withOpacity(0.5),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Your Library is Empty',
+                style: TextStyle(
+                  fontSize: 18,
+                  color: Colors.white.withOpacity(0.8),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Songs you download will appear here.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white.withOpacity(0.5)),
+              ),
+            ],
+          ).animate().fade(duration: 500.ms),
+        );
+      }
+      return GridView.builder(
+        padding: const EdgeInsets.fromLTRB(12, kToolbarHeight + 60, 12, 100),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 12.0,
+          mainAxisSpacing: 12.0,
+          childAspectRatio: 0.75,
+        ),
+        itemCount: downloadController.downloadedSongs.length,
+        itemBuilder: (context, index) {
+          final song = downloadController.downloadedSongs[index];
+          return Dismissible(
+            key: Key(song.id),
+            direction: DismissDirection.endToStart,
+            onDismissed: (direction) {
+              downloadController.deleteSong(song);
+              Get.snackbar(
+                'Removed',
+                '${song.title} removed from your library.',
+                snackPosition: SnackPosition.BOTTOM,
+                backgroundColor: Colors.white.withOpacity(0.1),
+                colorText: Colors.white,
+              );
+            },
+            background: Container(
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: const Icon(Icons.delete_outline, color: Colors.white),
+            ),
+            child: SongListItem(
+              song: song,
+              onTap: () => audioController.play(song),
+            ),
+          ).animate().fade(delay: (index * 50).ms).slideY(begin: 0.2);
+        },
+      );
+    });
+  }
+}
+
+```
+
+[lib/widgets/song_list_item.dart]
+```
+import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../models/song.dart';
+import 'glassmorphic_container.dart';
+
+class SongListItem extends StatelessWidget {
+  final Song song;
+  final VoidCallback onTap;
+
+  const SongListItem({super.key, required this.song, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    String subtitleText = song.artist;
+    if (song.album != null && song.album!.isNotEmpty) {
+      subtitleText += ' • ${song.album}';
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: GlassmorphicContainer(
+        borderRadius: 16,
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 3,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
+                child: CachedNetworkImage(
+                  imageUrl: song.imageUrl,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  placeholder: (context, url) =>
+                      Container(color: Colors.white.withOpacity(0.1)),
+                  errorWidget: (context, url, error) => Container(
+                    color: Colors.white.withOpacity(0.1),
+                    child: Icon(
+                      Icons.broken_image,
+                      color: Colors.white.withOpacity(0.3),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 1,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitleText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+```
+
+[lib/widgets/player_controls.dart]
+```
+// lib/widgets/player_controls.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:get/get.dart';
+import '../controllers/audio_player_controller.dart';
+
+class PlayerControls extends StatelessWidget {
+  const PlayerControls({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final audioController = Get.find<AudioPlayerController>();
+    return Obx(
+      () => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          IconButton(
+            icon: const Icon(
+              Icons.skip_previous_rounded,
+              color: Colors.white,
+              size: 36,
+            ),
+            onPressed: audioController.currentIndex.value > 0
+                ? () => audioController.playPrevious()
+                : null,
+          ),
+          // Center Play/Pause Button with Loading Indicator
+          Obx(
+            // <-- Wrap the main button in Obx to listen to isPreparing
+            () => IconButton(
+              icon:
+                  audioController
+                      .isPreparing
+                      .value // <-- Check isPreparing
+                  ? const SizedBox(
+                      height: 50, // Approximate size of the icon for layout
+                      width: 50,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3.0,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : AnimatedSwitcher(
+                      // <-- Normal icon when not preparing
+                      duration: const Duration(milliseconds: 300),
+                      transitionBuilder: (child, animation) {
+                        return ScaleTransition(scale: animation, child: child);
+                      },
+                      child: Icon(
+                        audioController.isPlaying.value
+                            ? Icons.pause_circle_filled_rounded
+                            : Icons.play_circle_filled_rounded,
+                        key: ValueKey<bool>(audioController.isPlaying.value),
+                        color: Colors.white,
+                        size: 72,
+                      ),
+                    ),
+              iconSize: 72, // Ensure size matches the Icon
+              onPressed:
+                  audioController
+                      .isPreparing
+                      .value // <-- Disable while preparing
+                  ? null
+                  : () {
+                      // <-- Enable play/pause when ready
+                      if (audioController.isPlaying.value) {
+                        audioController.pause();
+                      } else {
+                        audioController.resume();
+                      }
+                    },
+            ),
+          ).animate().scale(
+            delay: 100.ms,
+          ), // Keep the animation for the button itself
+          IconButton(
+            icon: const Icon(
+              Icons.skip_next_rounded,
+              color: Colors.white,
+              size: 36,
+            ),
+            onPressed:
+                audioController.currentIndex.value <
+                    audioController.queue.length - 1
+                ? () => audioController.playNext()
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+```
+
+[lib/screens/search_screen.dart]
+```
+// lib/screens/search_screen.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:get/get.dart';
+import '../models/song.dart';
+import '../services/api_service.dart';
+import '../widgets/song_list_item.dart';
+import '../controllers/audio_player_controller.dart';
+import '../widgets/glassmorphic_container.dart';
+
+class SearchScreen extends StatefulWidget {
+  const SearchScreen({super.key});
+
+  @override
+  State<SearchScreen> createState() => _SearchScreenState();
+}
+
+class _SearchScreenState extends State<SearchScreen> {
+  final ApiService _apiService = ApiService();
+  final TextEditingController _searchController = TextEditingController();
+  List<Song> _songs = [];
+  bool _isLoading = false;
+  bool _hasSearched = false;
+
+  void _searchSongs() async {
+    if (_searchController.text.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _isLoading = true;
+      _hasSearched = true;
+    });
+    try {
+      final songs = await _apiService.searchSongs(_searchController.text);
+      setState(() {
+        _songs = songs;
+      });
+    } catch (e) {
+      print(e);
+      // Optionally show an error snackbar
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _apiService.dispose();
+    super.dispose(); // FIX: Call super.dispose()
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final audioController = Get.find<AudioPlayerController>();
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, kToolbarHeight + 40, 16, 16),
+          child: GlassmorphicContainer(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: TextField(
+              controller: _searchController,
+              style: const TextStyle(color: Colors.white),
+              cursorColor: Colors.white,
+              decoration: InputDecoration(
+                hintText: 'Search songs or artists...',
+                hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                border: InputBorder.none,
+                icon: Icon(Icons.search, color: Colors.white.withOpacity(0.7)),
+                suffixIcon: IconButton(
+                  icon: Icon(Icons.add, color: Colors.white.withOpacity(0.7)),
+                  onPressed: _songs.isNotEmpty
+                      ? () => audioController.addToQueueMultiple(_songs)
+                      : null,
+                  tooltip: 'Add all to queue',
+                ),
+              ),
+              onSubmitted: (_) => _searchSongs(),
+            ),
+          ),
+        ),
+        Expanded(
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                )
+              : !_hasSearched
+              ? Center(
+                  child: Text(
+                    'Find your next favorite song.',
+                    style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                  ).animate().fade(),
+                )
+              : _songs.isEmpty
+              ? Center(
+                  child: Text(
+                    'No results found.',
+                    style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                  ).animate().fade(),
+                )
+              : GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 100),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12.0,
+                    mainAxisSpacing: 12.0,
+                    childAspectRatio: 0.75,
+                  ),
+                  itemCount: _songs.length,
+                  itemBuilder: (context, index) {
+                    final song = _songs[index];
+                    return Stack(
+                      children: [
+                        SongListItem(
+                              song: song,
+                              onTap: () {
+                                audioController.play(song);
+                              },
+                            )
+                            .animate()
+                            .fade(delay: (index * 50).ms)
+                            .slideY(begin: 0.2),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: IconButton(
+                            icon: Icon(
+                              Icons.add_circle,
+                              color: Colors.white.withOpacity(0.8),
+                              size: 28,
+                            ),
+                            onPressed: () {
+                              audioController.addToQueue(song);
+                            },
+                            tooltip: 'Add to queue',
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+```
+
+[lib/widgets/mini_player.dart]
+```
+// lib/widgets/mini_player.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:get/get.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../controllers/audio_player_controller.dart';
+import '../screens/player_screen.dart';
+import 'glassmorphic_container.dart';
+
+class MiniPlayer extends StatelessWidget {
+  const MiniPlayer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final audioController = Get.find<AudioPlayerController>();
+    return Obx(() {
+      final song = audioController.currentSong.value;
+      if (song == null) {
+        return const SizedBox.shrink();
+      }
+      return GlassmorphicContainer(
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        borderRadius: 12,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: GestureDetector(
+          onTap: () {
+            Get.to(
+              () => const PlayerScreen(),
+              transition: Transition.downToUp,
+              duration: const Duration(milliseconds: 500),
+            );
+          },
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: CachedNetworkImage(
+                  imageUrl: song.imageUrl,
+                  width: 50,
+                  height: 50,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      song.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      song.artist,
+                      style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Play/Pause Button with Loading Indicator
+              Obx(
+                // <-- Wrap the button in Obx to listen to isPreparing
+                () => IconButton(
+                  icon:
+                      audioController
+                          .isPreparing
+                          .value // <-- Check isPreparing
+                      ? const SizedBox(
+                          height: 40, // Match the approximate size of the icon
+                          width: 40,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.0,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                      : Icon(
+                          audioController.isPlaying.value
+                              ? Icons.pause_circle_filled_rounded
+                              : Icons.play_circle_filled_rounded,
+                          color: Colors.white,
+                          size: 40,
+                        ),
+                  onPressed:
+                      audioController
+                          .isPreparing
+                          .value // <-- Disable while preparing
+                      ? null
+                      : () {
+                          // <-- Enable play/pause when ready
+                          if (audioController.isPlaying.value) {
+                            audioController.pause();
+                          } else {
+                            audioController.resume();
+                          }
+                        },
+                ),
+              ).animate().scale(
+                delay: 100.ms,
+              ), // Keep the animation for the button itself
+            ],
+          ),
+        ),
+      ).animate().slideY(
+        begin: 2,
+        duration: 500.ms,
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+}
+
+```
+
+[lib/widgets/glassmorphic_container.dart]
+```
+import 'dart:ui';
+import 'package:flutter/material.dart';
+
+class GlassmorphicContainer extends StatelessWidget {
+  final Widget child;
+  final double borderRadius;
+  final EdgeInsetsGeometry padding;
+  final EdgeInsetsGeometry margin;
+
+  const GlassmorphicContainer({
+    super.key,
+    required this.child,
+    this.borderRadius = 12.0,
+    this.padding = const EdgeInsets.all(8.0),
+    this.margin = EdgeInsets.zero,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: margin,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
+          child: Container(
+            padding: padding,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withOpacity(0.15),
+                  Colors.white.withOpacity(0.05),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(borderRadius),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.2),
+                width: 1.0,
+              ),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+```
+
+[lib/screens/player_screen.dart]
+```
+// lib/screens/player_screen.dart
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:get/get.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../controllers/audio_player_controller.dart';
+import '../widgets/player_controls.dart';
+import '../widgets/seek_bar.dart';
+import '../widgets/glassmorphic_container.dart';
+import './queue_screen.dart';
+
+class PlayerScreen extends StatefulWidget {
+  const PlayerScreen({super.key});
+
+  @override
+  State<PlayerScreen> createState() => _PlayerScreenState();
+}
+
+class _PlayerScreenState extends State<PlayerScreen>
+    with SingleTickerProviderStateMixin {
+  // FIX: Declare as late
+  late AnimationController _rotationController;
+
+  @override
+  void initState() {
+    super.initState();
+    // FIX: Initialize in initState
+    _rotationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 15),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _rotationController.dispose();
+    super.dispose(); // FIX: Call super.dispose()
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final audioController = Get.find<AudioPlayerController>();
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
+          onPressed: () => Get.back(),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.queue_music_rounded),
+            onPressed: () {
+              Get.to(
+                () => const QueueScreen(),
+                transition: Transition.downToUp,
+                duration: const Duration(milliseconds: 500),
+              );
+            },
+          ),
+        ],
+      ),
+      body: Obx(() {
+        final song = audioController.currentSong.value;
+        if (song == null) {
+          return const Center(child: Text('No song selected'));
+        }
+
+        // Update rotation based on play state
+        if (audioController.isPlaying.value) {
+          _rotationController.repeat(); // Resume if paused
+        } else {
+          _rotationController.stop(); // Pause if playing
+        }
+
+        return Stack(
+          children: [
+            // Blurred Background Image
+            Container(
+              decoration: BoxDecoration(
+                image: DecorationImage(
+                  image: CachedNetworkImageProvider(song.imageUrl),
+                  fit: BoxFit.cover,
+                ),
+              ),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                child: Container(color: Colors.black.withOpacity(0.5)),
+              ),
+            ),
+            // Main Content
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Spacer(),
+                    // Rotating Album Art
+                    RotationTransition(
+                          turns: _rotationController,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.5),
+                                  blurRadius: 30,
+                                  spreadRadius: 5,
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                MediaQuery.of(context).size.width * 0.35,
+                              ),
+                              child: CachedNetworkImage(
+                                imageUrl: song.imageUrl,
+                                height: MediaQuery.of(context).size.width * 0.7,
+                                width: MediaQuery.of(context).size.width * 0.7,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                        )
+                        .animate()
+                        .fade(duration: 500.ms)
+                        .scale(begin: const Offset(0.8, 0.8)),
+                    const Spacer(),
+                    // Song Info
+                    Text(
+                      song.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ).animate().fade(delay: 200.ms).slideY(begin: 0.5),
+                    const SizedBox(height: 8),
+                    Text(
+                      song.artist,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                        fontSize: 16,
+                      ),
+                    ).animate().fade(delay: 300.ms).slideY(begin: 0.5),
+                    const SizedBox(height: 30),
+                    // Controls in a Glassmorphic Container
+                    GlassmorphicContainer(
+                      padding: const EdgeInsets.all(16),
+                      borderRadius: 16,
+                      child: const Column(
+                        children: [
+                          SeekBarWidget(),
+                          SizedBox(height: 10),
+                          PlayerControls(),
+                        ],
+                      ),
+                    ).animate().fade(delay: 400.ms).slideY(begin: 0.5),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+}
+
+```
