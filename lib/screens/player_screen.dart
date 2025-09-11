@@ -1,7 +1,7 @@
 // lib/screens/player_screen.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
+// import 'package:flutter_animate/flutter_animate.dart'; // Removed
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../controllers/audio_player_controller.dart';
@@ -28,7 +28,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _rotationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 15),
-    )..repeat();
+    );
+    // Do not call repeat() here anymore
   }
 
   @override
@@ -68,16 +69,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (song == null) {
           return const Center(child: Text('No song selected'));
         }
-        // Update rotation based on play state
-        if (audioController.isPlaying.value) {
-          // Resume rotation if paused previously or just started
-          if (_rotationController.isDismissed ||
-              _rotationController.isCompleted) {
-            _rotationController.repeat(); // Start repeating if not already
-          }
-        } else {
-          _rotationController.stop(); // Pause rotation if playing
-        }
         // Wrap the main Stack content with GestureDetector for swipe down to close
         return GestureDetector(
           onVerticalDragUpdate: (details) {
@@ -103,8 +94,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
                   child: Container(
-                    color: Colors.black.withValues(alpha: 0.5),
-                  ), // <-- Fixed
+                    color: Colors.black.withOpacity(
+                      0.5,
+                    ), // <-- Fixed: withValues -> withOpacity
+                  ),
                 ),
               ),
               // Main Content
@@ -115,40 +108,53 @@ class _PlayerScreenState extends State<PlayerScreen>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Spacer(),
-                      // Rotating Album Art
+                      // Rotating Album Art - Control animation with a separate Obx
+                      // This Obx only listens to isPlaying changes
+                      Obx(() {
+                        // This listener reacts only to isPlaying changes
+                        if (audioController.isPlaying.value) {
+                          if (!_rotationController.isAnimating) {
+                            _rotationController
+                                .repeat(); // Start only if not already animating
+                          }
+                        } else {
+                          if (_rotationController.isAnimating) {
+                            _rotationController
+                                .stop(); // Stop only if it's animating
+                          }
+                        }
+                        // This Obx doesn't build any UI itself, so return a SizedBox.shrink
+                        return const SizedBox.shrink();
+                      }),
                       RotationTransition(
-                            turns: _rotationController,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(
-                                      alpha: 0.5,
-                                    ), // <-- Fixed
-                                    blurRadius: 30,
-                                    spreadRadius: 5,
-                                  ),
-                                ],
+                        turns: _rotationController,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(
+                                  0.5,
+                                ), // <-- Fixed: withValues -> withOpacity
+                                blurRadius: 30,
+                                spreadRadius: 5,
                               ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(
-                                  MediaQuery.of(context).size.width * 0.35,
-                                ),
-                                child: CachedNetworkImage(
-                                  imageUrl: song.imageUrl,
-                                  height:
-                                      MediaQuery.of(context).size.width * 0.7,
-                                  width:
-                                      MediaQuery.of(context).size.width * 0.7,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                              MediaQuery.of(context).size.width * 0.35,
                             ),
-                          )
-                          .animate()
-                          .fade(duration: 500.ms)
-                          .scale(begin: const Offset(0.8, 0.8)),
+                            child: CachedNetworkImage(
+                              imageUrl: song.imageUrl,
+                              height: MediaQuery.of(context).size.width * 0.7,
+                              width: MediaQuery.of(context).size.width * 0.7,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Removed .animate().fade(...).scale(...)
                       const Spacer(),
                       // Song Info - Modified to handle overflow
                       Text(
@@ -162,21 +168,23 @@ class _PlayerScreenState extends State<PlayerScreen>
                         maxLines: 1, // Limit to one line
                         overflow:
                             TextOverflow.ellipsis, // Add ellipsis if too long
-                      ).animate().fade(delay: 200.ms).slideY(begin: 0.5),
+                      ),
+                      // Removed .animate().fade(...).slideY(...)
                       const SizedBox(height: 8),
                       Text(
                         song.artist,
                         style: TextStyle(
-                          color: Colors.white.withValues(
-                            alpha: 0.7,
-                          ), // <-- Fixed
+                          color: Colors.white.withOpacity(
+                            0.7,
+                          ), // <-- Fixed: withValues -> withOpacity
                           fontSize: 16,
                         ),
                         textAlign: TextAlign.center,
                         maxLines: 1, // Limit to one line
                         overflow:
                             TextOverflow.ellipsis, // Add ellipsis if too long
-                      ).animate().fade(delay: 300.ms).slideY(begin: 0.5),
+                      ),
+                      // Removed .animate().fade(...).slideY(...)
                       const SizedBox(height: 30),
                       // Controls in a Glassmorphic Container
                       GlassmorphicContainer(
@@ -189,7 +197,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                             PlayerControls(),
                           ],
                         ),
-                      ).animate().fade(delay: 400.ms).slideY(begin: 0.5),
+                      ),
+                      // Removed .animate().fade(...).slideY(...)
                       const SizedBox(height: 20),
                     ],
                   ),

@@ -12,11 +12,11 @@ class AudioPlayerController extends GetxController {
   // Initialize AudioPlayer with PlayerMode.media for background playback support
   // Declare as late final because we need to pass the mode during initialization
   late final AudioPlayer audioPlayer;
-
   final DatabaseService _dbService = Get.find<DatabaseService>();
   final DownloadController _downloadController =
       Get.find<DownloadController>(); // Get instance
   final ApiService _apiService = ApiService();
+
   var currentSong = Rx<Song?>(null);
   var isPlaying = false.obs;
   var queue = <Song>[].obs;
@@ -28,14 +28,15 @@ class AudioPlayerController extends GetxController {
   var duration = Duration.zero.obs;
   var position = Duration.zero.obs;
 
+  // Track the ID of the song currently being downloaded
+  String? _currentDownloadingSongId;
+
   @override
   void onInit() {
     super.onInit();
-
     // Initialize AudioPlayer with PlayerMode.media
     // This is often sufficient for basic background playback with audioplayers
     audioPlayer = AudioPlayer();
-
     // Listen to player state and update our Rx variables.
     audioPlayer.onPlayerStateChanged.listen((state) {
       isPlaying.value = state == PlayerState.playing;
@@ -60,6 +61,8 @@ class AudioPlayerController extends GetxController {
   }) async {
     // Set preparing state immediately for UI feedback
     isPreparing.value = true; // <-- Set to true at the start
+
+    // If it's the same song, toggle play/pause
     if (currentSong.value?.id == song.id) {
       if (audioPlayer.state == PlayerState.playing) {
         await pause();
@@ -69,11 +72,23 @@ class AudioPlayerController extends GetxController {
       isPreparing.value = false; // <-- Reset if toggling play/pause
       return;
     }
-    // Stop the current song and reset state before playing a new one.
-    await audioPlayer.stop(); // Use stop() for clean state
+
+    // If a different song is about to be played, stop the current one
+    // Note: We are not cancelling downloads in this version as cancelDownload doesn't exist
+    final previousSongId = currentSong.value?.id;
+    if (previousSongId != null && previousSongId != song.id) {
+      debugPrint("Stopping previous song: $previousSongId");
+      // Stop the audio player for the previous song
+      await audioPlayer.stop(); // Use stop() for clean state
+      // We cannot cancel the download for the previous song as cancelDownload doesn't exist
+      // The download will continue in the background
+    }
+
+    // Reset state for the new song.
     duration.value = Duration.zero;
     position.value = Duration.zero;
     currentSong.value = song;
+
     try {
       // If this is a new song (not from queue), fetch related songs or use downloaded list
       if (addToQueue && (queue.isEmpty || queue[0].id != song.id)) {
@@ -105,12 +120,12 @@ class AudioPlayerController extends GetxController {
           await _fetchRelatedSongs(song);
         }
       }
+
       final downloadedSong = _dbService.getSong(song.id);
       // Check if the file actually exists locally before trying to play it
       if (downloadedSong?.filePath != null &&
           downloadedSong!.filePath!.isNotEmpty &&
           File(downloadedSong.filePath!).existsSync()) {
-        // Check file existence
         debugPrint("Playing from local file: ${downloadedSong.filePath}");
         await audioPlayer.play(DeviceFileSource(downloadedSong.filePath!));
         // Optional: Trigger download to ensure cache is up-to-date or re-cache if needed
@@ -126,8 +141,11 @@ class AudioPlayerController extends GetxController {
         debugPrint("Streaming from network and starting download...");
         final audioUrl = await _apiService.getAudioUrl(song.id);
         await audioPlayer.play(UrlSource(audioUrl));
+
         // Start caching the song in the background after playback starts
-        // Use .then() or await based on whether you want play() to wait
+        // Track this download for potential cancellation (if cancelDownload existed)
+        _currentDownloadingSongId = song.id;
+        // Using .then() or await based on whether you want play() to wait
         // Using .then() allows playback to start immediately
         // Make sure downloadSong is public (not _downloadSong) in DownloadController
         _downloadController
@@ -136,18 +154,30 @@ class AudioPlayerController extends GetxController {
               debugPrint(
                 "Background download initiated/completed for ${song.id}",
               );
+              // Check if this is still the current downloading song before resetting
+              if (_currentDownloadingSongId == song.id) {
+                _currentDownloadingSongId = null;
+              }
             })
             .catchError((error) {
               // Handle potential errors during the download initiation
               debugPrint(
                 "Error initiating background download for ${song.id}: $error",
               );
+              // Check if this is still the current downloading song before resetting
+              if (_currentDownloadingSongId == song.id) {
+                _currentDownloadingSongId = null;
+              }
               // Optionally show a snackbar to the user
               // Get.snackbar('Download Error', 'Failed to cache ${song.title}');
             });
       }
     } catch (e) {
       debugPrint("Error playing/streaming song: $e");
+      // Reset downloading ID on error as well
+      if (_currentDownloadingSongId == song.id) {
+        _currentDownloadingSongId = null;
+      }
       Get.snackbar('Playback Error', 'Could not play the selected song.');
     } finally {
       // Ensure isPreparing is set to false regardless of success or failure
@@ -250,22 +280,33 @@ class AudioPlayerController extends GetxController {
     }
   }
 
-  // ... (rest of the methods like playNext, playPrevious, etc. remain the same)
   Future<void> playNext() async {
     if (queue.isEmpty || currentIndex.value >= queue.length - 1) {
       // If we're at the end of the queue, try to get more related songs
       if (currentSong.value != null) {
         await _fetchMoreSongs();
         if (currentIndex.value < queue.length - 1) {
+          // We cannot cancel the download for the current song as cancelDownload doesn't exist
+          // The download will continue in the background
+          await audioPlayer.stop(); // Stop current audio
+
           currentIndex.value++;
           await play(queue[currentIndex.value], addToQueue: false);
         } else {
           // If no more songs, just restart the current one
+          // We cannot cancel the download for the current song as cancelDownload doesn't exist
+          // The download will continue in the background
+          await audioPlayer.stop(); // Stop current audio
           await play(currentSong.value!, addToQueue: false);
         }
       }
       return;
     }
+
+    // We cannot cancel the download for the current song as cancelDownload doesn't exist
+    // The download will continue in the background
+    await audioPlayer.stop(); // Stop current audio
+
     currentIndex.value++;
     await play(queue[currentIndex.value], addToQueue: false);
   }
@@ -300,6 +341,11 @@ class AudioPlayerController extends GetxController {
 
   Future<void> playPrevious() async {
     if (currentIndex.value <= 0) return;
+
+    // We cannot cancel the download for the current song as cancelDownload doesn't exist
+    // The download will continue in the background
+    await audioPlayer.stop(); // Stop current audio
+
     currentIndex.value--;
     await play(queue[currentIndex.value], addToQueue: false);
   }
@@ -360,6 +406,8 @@ class AudioPlayerController extends GetxController {
     // Important: dispose the player to free up resources
     audioPlayer.dispose();
     _apiService.dispose();
+    // We cannot cancel any ongoing download when controller is closed as cancelDownload doesn't exist
+    // The download (if any) will finish or fail on its own
     super.onClose();
   }
 }

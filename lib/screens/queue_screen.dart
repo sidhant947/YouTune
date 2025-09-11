@@ -15,7 +15,9 @@ class QueueScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
-        backgroundColor: Colors.black.withValues(alpha: 0.3), // <-- Fixed
+        backgroundColor: Colors.black.withOpacity(
+          0.3,
+        ), // <-- Fixed: withValues -> withOpacity
         elevation: 0,
         title: Obx(
           () => Text(
@@ -41,13 +43,17 @@ class QueueScreen extends StatelessWidget {
                   Icon(
                     Icons.queue_music_rounded,
                     size: 64,
-                    color: Colors.white.withValues(alpha: 0.5), // <-- Fixed
+                    color: Colors.white.withOpacity(
+                      0.5,
+                    ), // <-- Fixed: withValues -> withOpacity
                   ),
                   const SizedBox(height: 16),
                   Text(
                     'Queue is empty',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7), // <-- Fixed
+                      color: Colors.white.withOpacity(
+                        0.7,
+                      ), // <-- Fixed: withValues -> withOpacity
                       fontSize:
                           18, // Kept slightly larger for the empty state message
                     ),
@@ -56,7 +62,9 @@ class QueueScreen extends StatelessWidget {
                   Text(
                     'Play a song to start a queue',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5), // <-- Fixed
+                      color: Colors.white.withOpacity(
+                        0.5,
+                      ), // <-- Fixed: withValues -> withOpacity
                       fontSize:
                           14, // Kept slightly larger for the empty state message
                     ),
@@ -80,7 +88,9 @@ class QueueScreen extends StatelessWidget {
                     ? DismissDirection.endToStart
                     : DismissDirection.none,
                 background: Container(
-                  color: Colors.red.withValues(alpha: 0.3), // <-- Fixed
+                  color: Colors.red.withOpacity(
+                    0.3,
+                  ), // <-- Fixed: withValues -> withOpacity
                   alignment: Alignment.centerRight,
                   padding: const EdgeInsets.only(right: 20),
                   child: const Icon(Icons.delete_outline, color: Colors.white),
@@ -108,7 +118,9 @@ class QueueScreen extends StatelessWidget {
                     style: TextStyle(
                       color: isCurrent
                           ? Colors.white
-                          : Colors.white.withValues(alpha: 0.8), // <-- Fixed
+                          : Colors.white.withOpacity(
+                              0.8,
+                            ), // <-- Fixed: withValues -> withOpacity
                       fontWeight: isCurrent
                           ? FontWeight.bold
                           : FontWeight.normal,
@@ -121,8 +133,12 @@ class QueueScreen extends StatelessWidget {
                     song.artist,
                     style: TextStyle(
                       color: isCurrent
-                          ? Colors.white.withValues(alpha: 0.9) // <-- Fixed
-                          : Colors.white.withValues(alpha: 0.6), // <-- Fixed
+                          ? Colors.white.withOpacity(
+                              0.9,
+                            ) // <-- Fixed: withValues -> withOpacity
+                          : Colors.white.withOpacity(
+                              0.6,
+                            ), // <-- Fixed: withValues -> withOpacity
                       fontSize: 12, // Smaller subtitle font
                     ),
                     maxLines: 1, // Limit artist to one line

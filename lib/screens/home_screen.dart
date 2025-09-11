@@ -1,92 +1,95 @@
 // lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:get/get.dart';
-import '../widgets/song_list_item.dart';
-import '../controllers/audio_player_controller.dart';
-import '../controllers/download_controller.dart';
+import 'downloads_screen.dart'; // Import the new Downloads screen
+import '../widgets/mini_player.dart'; // Make sure this import is present
+import '../screens/search_screen.dart'; // Import SearchScreen
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final downloadController = Get.find<DownloadController>();
-    final audioController = Get.find<AudioPlayerController>();
-    return Obx(() {
-      if (downloadController.downloadedSongs.isEmpty) {
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+    return Scaffold(
+      appBar: AppBar(title: const Text('Library')),
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Main content area - just the Downloads tile
+          _DownloadsTile(),
+          // MiniPlayer positioned at the bottom
+          const Positioned(bottom: 0, left: 0, right: 0, child: MiniPlayer()),
+        ],
+      ),
+      // Add Floating Action Button
+      // Inside lib/screens/home_screen.dart, within the Scaffold widget
+
+      // ... other Scaffold properties ...
+      floatingActionButton: Padding(
+        // Add padding to lift the FAB above the MiniPlayer
+        padding: const EdgeInsets.only(bottom: 90.0), // Adjust 90.0 if needed
+        child: FloatingActionButton(
+          backgroundColor: Colors.white.withOpacity(
+            0.9,
+          ), // Use withOpacity as per previous fixes
+          foregroundColor: Colors.black,
+          child: const Icon(Icons.search),
+          onPressed: () {
+            // Navigate to SearchScreen
+            Get.to(() => const SearchScreen());
+          },
+        ),
+      ),
+      // ... other Scaffold properties ...
+    );
+  }
+}
+
+// Extract the Downloads tile into a separate widget for clarity
+class _DownloadsTile extends StatelessWidget {
+  const _DownloadsTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(20.0), // Add some padding around the tile
+      child: GestureDetector(
+        onTap: () {
+          // Navigate to the Downloads screen
+          Get.to(() => const DownloadsScreen());
+        },
+        child: Container(
+          height: 80, // Set a fixed height for the tile
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(16), // Use rounded corners
+            border: Border.all(
+              color: Colors.white.withOpacity(0.2),
+              width: 1.0,
+            ),
+          ),
+          child: const Row(
+            mainAxisAlignment:
+                MainAxisAlignment.center, // Center content horizontally
             children: [
               Icon(
-                Icons.library_music_outlined,
-                size: 80,
-                color: Colors.white.withValues(alpha: 0.5), // <-- Fixed
+                Icons.download_for_offline,
+                color: Colors.white,
+                size: 30, // Adjust icon size
               ),
-              const SizedBox(height: 20),
+              SizedBox(width: 15), // Add space between icon and text
               Text(
-                'Your Library is Empty',
+                'Downloads',
                 style: TextStyle(
-                  fontSize: 18,
-                  color: Colors.white.withValues(alpha: 0.8), // <-- Fixed
+                  color: Colors.white,
+                  fontSize: 20, // Adjust font size
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Songs you download will appear here.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
-                ), // <-- Fixed
-              ),
             ],
-          ).animate().fade(duration: 500.ms),
-        );
-      }
-      return GridView.builder(
-        padding: const EdgeInsets.fromLTRB(12, kToolbarHeight + 60, 12, 100),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12.0,
-          mainAxisSpacing: 12.0,
-          childAspectRatio: 0.75,
+          ),
         ),
-        itemCount: downloadController.downloadedSongs.length,
-        itemBuilder: (context, index) {
-          final song = downloadController.downloadedSongs[index];
-          return Dismissible(
-            key: Key(song.id),
-            direction: DismissDirection.endToStart,
-            onDismissed: (direction) {
-              downloadController.deleteSong(song);
-              Get.snackbar(
-                'Removed',
-                '${song.title} removed from your library.',
-                snackPosition: SnackPosition.BOTTOM,
-                backgroundColor: Colors.white.withValues(
-                  alpha: 0.1,
-                ), // <-- Fixed
-                colorText: Colors.white,
-              );
-            },
-            background: Container(
-              decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha: 0.8), // <-- Fixed
-                borderRadius: BorderRadius.circular(12),
-              ),
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: const Icon(Icons.delete_outline, color: Colors.white),
-            ),
-            child: SongListItem(
-              song: song,
-              // Pass queueAllDownloaded: true when playing from Home/Library
-              onTap: () => audioController.play(song, queueAllDownloaded: true),
-            ),
-          ).animate().fade(delay: (index * 50).ms).slideY(begin: 0.2);
-        },
-      );
-    });
+      ),
+    );
   }
 }

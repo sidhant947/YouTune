@@ -1,6 +1,6 @@
 // lib/widgets/player_controls.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
+// import 'package:flutter_animate/flutter_animate.dart'; // Removed
 import 'package:get/get.dart';
 import '../controllers/audio_player_controller.dart';
 
@@ -70,9 +70,7 @@ class PlayerControls extends StatelessWidget {
                       }
                     },
             ),
-          ).animate().scale(
-            delay: 100.ms,
-          ), // Keep the animation for the button itself
+          ), // Removed .animate().scale(...)
           IconButton(
             icon: const Icon(
               Icons.skip_next_rounded,

@@ -1,6 +1,6 @@
 // lib/widgets/mini_player.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
+// import 'package:flutter_animate/flutter_animate.dart'; // Removed
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../controllers/audio_player_controller.dart';
@@ -58,8 +58,10 @@ class MiniPlayer extends StatelessWidget {
                     Text(
                       song.artist,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
-                      ), // <-- Fixed
+                        color: Colors.white.withOpacity(
+                          0.7,
+                        ), // <-- Fixed: withValues -> withOpacity
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -105,17 +107,11 @@ class MiniPlayer extends StatelessWidget {
                           }
                         },
                 ),
-              ).animate().scale(
-                delay: 100.ms,
-              ), // Keep the animation for the button itself
+              ), // Removed .animate().scale(...)
             ],
           ),
         ),
-      ).animate().slideY(
-        begin: 2,
-        duration: 500.ms,
-        curve: Curves.easeOutCubic,
-      );
+      ); // Removed .animate().slideY(...)
     });
   }
 }

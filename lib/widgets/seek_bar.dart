@@ -1,3 +1,4 @@
+// lib/widgets/seek_bar.dart
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/audio_player_controller.dart';
@@ -27,11 +28,13 @@ class SeekBarWidget extends StatelessWidget {
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7.0),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 15.0),
               activeTrackColor: Colors.white,
-              inactiveTrackColor: Colors.white.withValues(
-                alpha: 0.3,
-              ), // <-- Fixed
+              inactiveTrackColor: Colors.white.withOpacity(
+                0.3,
+              ), // <-- Fixed: withValues -> withOpacity
               thumbColor: Colors.white,
-              overlayColor: Colors.white.withValues(alpha: 0.2), // <-- Fixed
+              overlayColor: Colors.white.withOpacity(
+                0.2,
+              ), // <-- Fixed: withValues -> withOpacity
             ),
             child: Slider(
               value: position.inSeconds.toDouble().clamp(
@@ -56,14 +59,18 @@ class SeekBarWidget extends StatelessWidget {
                 Text(
                   _formatDuration(position),
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7), // <-- Fixed
+                    color: Colors.white.withOpacity(
+                      0.7,
+                    ), // <-- Fixed: withValues -> withOpacity
                     fontSize: 12,
                   ),
                 ),
                 Text(
                   _formatDuration(duration),
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7), // <-- Fixed
+                    color: Colors.white.withOpacity(
+                      0.7,
+                    ), // <-- Fixed: withValues -> withOpacity
                     fontSize: 12,
                   ),
                 ),

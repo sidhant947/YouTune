@@ -1,3 +1,4 @@
+// lib/widgets/glassmorphic_container.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
@@ -27,15 +28,21 @@ class GlassmorphicContainer extends StatelessWidget {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.white.withValues(alpha: 0.15), // <-- Fixed
-                  Colors.white.withValues(alpha: 0.05), // <-- Fixed
+                  Colors.white.withOpacity(
+                    0.15,
+                  ), // <-- Fixed: withValues -> withOpacity
+                  Colors.white.withOpacity(
+                    0.05,
+                  ), // <-- Fixed: withValues -> withOpacity
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(borderRadius),
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.2), // <-- Fixed
+                color: Colors.white.withOpacity(
+                  0.2,
+                ), // <-- Fixed: withValues -> withOpacity
                 width: 1.0,
               ),
             ),
