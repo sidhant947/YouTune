@@ -1,22 +1,34 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
-// import 'package:flutter_animate/flutter_animate.dart'; // Remove if not used elsewhere now
-import 'package:get/get.dart';
-import 'screens/home_screen.dart'; // Import HomeScreen directly
-// import 'screens/search_screen.dart'; // Not needed directly here anymore
+import 'package:flutter_bloc/flutter_bloc.dart'; // Import BLoC
+import 'screens/home_screen.dart';
 import 'services/database_service.dart';
-import 'controllers/audio_player_controller.dart';
-import 'controllers/download_controller.dart';
-// Remove import for navigation_controller.dart
+import 'blocs/audio_player/audio_player_bloc.dart'; // Import BLoC
+import 'blocs/download/download_bloc.dart'; // Import BLoC
+import 'blocs/navigation/navigation_bloc.dart'; // Import BLoC
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await DatabaseService.init();
-  Get.put(DatabaseService());
-  Get.put(DownloadController());
-  Get.put(AudioPlayerController());
-  // Remove Get.put for NavigationController
-  runApp(const MyApp());
+
+  runApp(
+    MultiBlocProvider(
+      // Use MultiBlocProvider to provide multiple BLoCs
+      providers: [
+        BlocProvider(create: (context) => NavigationBloc()),
+        BlocProvider(
+          create: (context) => DownloadBloc(databaseService: DatabaseService()),
+        ),
+        BlocProvider(
+          create: (context) => AudioPlayerBloc(
+            databaseService: DatabaseService(),
+            downloadBloc: context.read<DownloadBloc>(), // Access DownloadBloc
+          ),
+        ),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -24,7 +36,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GetMaterialApp(
+    return MaterialApp(
       title: 'Youtune',
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -36,9 +48,19 @@ class MyApp extends StatelessWidget {
           secondary: Colors.white,
           surface: Colors.black,
         ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          iconTheme: IconThemeData(color: Colors.white),
+          titleTextStyle: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
+        ),
       ),
       debugShowCheckedModeBanner: false,
-      home: const HomeScreen(), // Set HomeScreen directly as home
+      home: const HomeScreen(),
     );
   }
 }

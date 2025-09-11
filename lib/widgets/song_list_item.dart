@@ -11,6 +11,9 @@ class SongListItem extends StatelessWidget {
   final bool isDownloaded;
   final bool isDownloading;
   final double downloadProgress;
+  // Add a callback for deleting the song
+  final VoidCallback? onDelete; // Nullable, as not all contexts need delete
+
   const SongListItem({
     super.key,
     required this.song,
@@ -19,6 +22,7 @@ class SongListItem extends StatelessWidget {
     this.isDownloaded = true, // Assume downloaded if not specified
     this.isDownloading = false,
     this.downloadProgress = 0.0,
+    this.onDelete, // Accept the delete callback
   });
 
   @override
@@ -96,6 +100,24 @@ class SongListItem extends StatelessWidget {
                         right: 8,
                         child: _PulsingDownloadIcon(),
                       ),
+                    // Delete Button for Downloaded Songs
+                    if (isDownloaded && onDelete != null)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                          onPressed: onDelete, // Call the delete callback
+                          tooltip: 'Delete',
+                          padding: EdgeInsets.zero,
+                          constraints:
+                              const BoxConstraints(), // Remove default constraints for a tighter fit
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -139,6 +161,7 @@ class SongListItem extends StatelessWidget {
   }
 }
 
+// ... (_PulsingDownloadIcon widget remains the same) ...
 // Custom widget for the pulsing download icon
 class _PulsingDownloadIcon extends StatefulWidget {
   const _PulsingDownloadIcon();
